@@ -289,10 +289,10 @@ index 0000000..fb236f6
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..25a1446
+index 0000000..ed35409
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,536 @@
+@@ -0,0 +1,527 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -467,7 +467,9 @@ index 0000000..25a1446
 +/* 5-day weather row above the title. */
 +.tt-audio-weather {
 +    display: flex;
-+    align-items: flex-end;
++    align-items: stretch;
++    /* The five days share the full width of the details column. */
++    gap: 1.4vh;
 +    margin-bottom: 3.5vh;
 +}
 +
@@ -475,10 +477,10 @@ index 0000000..25a1446
 +    display: flex;
 +    flex-direction: column;
 +    align-items: center;
-+    width: 9vh;
-+    margin-right: 1.8vh;
-+    padding: 1.2vh 0 1vh;
-+    border-radius: 1.6vh;
++    flex: 1 1 0;
++    min-width: 0;
++    padding: 1.6vh 0 1.4vh;
++    border-radius: 2vh;
 +    background: rgba(255, 255, 255, 0.08);
 +}
 +
@@ -487,20 +489,20 @@ index 0000000..25a1446
 +}
 +
 +.tt-audio-weather-label {
-+    font-size: 1.8vh;
++    font-size: 2.3vh;
 +    font-weight: 600;
 +    color: rgba(255, 255, 255, 0.75);
 +}
 +
 +.tt-audio-weather-icon {
-+    width: 6.4vh;
-+    height: 6.4vh;
-+    margin: 0.6vh 0;
++    width: 8.5vh;
++    height: 8.5vh;
++    margin: 0.8vh 0;
 +    filter: drop-shadow(0 0.4vh 0.8vh rgba(0, 0, 0, 0.25));
 +}
 +
 +.tt-audio-weather-temps {
-+    font-size: 1.9vh;
++    font-size: 2.5vh;
 +    font-weight: 700;
 +    font-variant-numeric: tabular-nums;
 +}
@@ -511,16 +513,6 @@ index 0000000..25a1446
 +    color: rgba(255, 255, 255, 0.55);
 +}
 +
-+.tt-audio-weather-city {
-+    align-self: center;
-+    margin-left: 1vh;
-+    font-size: 2vh;
-+    font-weight: 600;
-+    color: rgba(255, 255, 255, 0.6);
-+    white-space: nowrap;
-+    overflow: hidden;
-+    text-overflow: ellipsis;
-+}
 +
 +.tt-audio-title {
 +    font-size: 5vh;
@@ -824,9 +816,8 @@ index 0000000..25a1446
 +    .tt-audio-btn { width: 9vh; height: 9vh; margin: 0 2vh; }
 +    .tt-audio-btn-main { width: 11vh; height: 11vh; }
 +    .tt-audio-hint { display: none; }
-+    .tt-audio-weather { justify-content: center; flex-wrap: wrap; margin-bottom: 2.5vh; }
-+    .tt-audio-weather-day { width: 14vw; margin: 0 1vw; }
-+    .tt-audio-weather-city { width: 100%; margin: 1vh 0 0; text-align: center; }
++    .tt-audio-weather { gap: 1.5vw; margin-bottom: 2.5vh; }
++    .tt-audio-weather-icon { width: 9vw; height: 9vw; }
 +    .tt-audio-clock { font-size: calc(80vw / 52); margin: 0 auto 2vh; }
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
@@ -1407,10 +1398,10 @@ index 0000000..2bf1f76
 +export { enableAudioOnly, disableAudioOnly, toggleAudioOnly };
 diff --git a/mods/features/audioWeather.js b/mods/features/audioWeather.js
 new file mode 100644
-index 0000000..21554de
+index 0000000..b9f85b1
 --- /dev/null
 +++ b/mods/features/audioWeather.js
-@@ -0,0 +1,253 @@
+@@ -0,0 +1,277 @@
 +// 5-day weather row for the audio-only screen.
 +// YouTube TV's CSP only lets the page reach Google/YouTube hosts, so the
 +// forecast is relayed through a public Google Sheet: its A1 cell runs
@@ -1423,6 +1414,9 @@ index 0000000..21554de
 +const CITY_COLUMN = 6;
 +const CACHE_KEY = 'tt-audio-weather';
 +const CACHE_TTL_MS = 60 * 60 * 1000;
++// If the sheet cannot reach Open-Meteo (it happens: Google's shared servers
++// get throttled), keep showing the last forecast for up to this long.
++const STALE_MAX_MS = 4 * 24 * 60 * 60 * 1000;
 +const REQUEST_TIMEOUT_MS = 8000;
 +const DAYS = 5;
 +const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -1552,12 +1546,24 @@ index 0000000..21554de
 +    });
 +}
 +
-+function readCache() {
++function readCache(maxAge) {
 +    try {
 +        const cached = JSON.parse(window.localStorage.getItem(CACHE_KEY));
-+        if (cached && Date.now() - cached.savedAt < CACHE_TTL_MS) return cached;
++        if (cached && Date.now() - cached.savedAt < maxAge) return cached;
 +    } catch (e) { }
 +    return null;
++}
++
++function localIsoDate(date) {
++    const pad = (n) => (n < 10 ? '0' : '') + n;
++    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
++}
++
++// Old forecasts start in the past: drop the days before today.
++function fromToday(data) {
++    const today = localIsoDate(new Date());
++    const days = data.days.filter((day) => day.date >= today);
++    return days.length ? Object.assign({}, data, { days }) : null;
 +}
 +
 +function writeCache(data) {
@@ -1585,9 +1591,19 @@ index 0000000..21554de
 +}
 +
 +async function loadForecast() {
-+    const cached = readCache();
-+    if (cached) return cached;
++    const cached = readCache(CACHE_TTL_MS);
++    if (cached) return fromToday(cached) || fetchForecast();
++    try {
++        return await fetchForecast();
++    } catch (e) {
++        const stale = readCache(STALE_MAX_MS);
++        const usable = stale && fromToday(stale);
++        if (usable) return usable;
++        throw e;
++    }
++}
 +
++async function fetchForecast() {
 +    const text = await fetchText(SHEET_URL);
 +    const json = JSON.parse(text.slice(text.indexOf('(') + 1, text.lastIndexOf(')')));
 +    const rows = json && json.table && json.table.rows;
@@ -1637,7 +1653,6 @@ index 0000000..21554de
 +        item.appendChild(temps);
 +        container.appendChild(item);
 +    });
-+    if (data.city) container.appendChild(el('div', 'tt-audio-weather-city', data.city));
 +    container.style.display = '';
 +}
 +
