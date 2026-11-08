@@ -160,12 +160,139 @@ index 0000000..2dfe900
 +        },
 +    };
 +}
+diff --git a/mods/features/audioClock.js b/mods/features/audioClock.js
+new file mode 100644
+index 0000000..fb236f6
+--- /dev/null
++++ b/mods/features/audioClock.js
+@@ -0,0 +1,121 @@
++// Widget-style clock for the audio-only screen: a dark rounded card with
++// minute ticks around the edge, analog hands in the middle, the hours and
++// minutes in large digits on each side, the date above and today's weather
++// below (same look as the Android "dual clock" widget).
++
++const SVG_NS = 'http://www.w3.org/2000/svg';
++// The SVG uses the card's aspect ratio; CSS sizes the card.
++const VIEW_W = 200;
++const VIEW_H = 104;
++const CX = VIEW_W / 2;
++const CY = VIEW_H / 2;
++const TICK_INSET = 5;
++const ACCENT = '#3B7BFF';
++
++function el(tag, className, text) {
++    const node = document.createElement(tag);
++    if (className) node.className = className;
++    if (text) node.textContent = text;
++    return node;
++}
++
++function svgEl(tag, attrs) {
++    const node = document.createElementNS(SVG_NS, tag);
++    for (const key in attrs) node.setAttribute(key, attrs[key]);
++    return node;
++}
++
++// 60 ticks pointing at the centre, ending on the card's (inset) border.
++function buildTicks(svg) {
++    const halfW = VIEW_W / 2 - TICK_INSET;
++    const halfH = VIEW_H / 2 - TICK_INSET;
++    for (let i = 0; i < 60; i++) {
++        const a = (Math.PI * 2 * i) / 60;
++        const dx = Math.sin(a);
++        const dy = -Math.cos(a);
++        const t = Math.min(Math.abs(dx) > 1e-6 ? halfW / Math.abs(dx) : Infinity,
++            Math.abs(dy) > 1e-6 ? halfH / Math.abs(dy) : Infinity);
++        const major = i % 5 === 0;
++        const len = major ? 11 : 6;
++        svg.appendChild(svgEl('line', {
++            x1: (CX + dx * t).toFixed(2), y1: (CY + dy * t).toFixed(2),
++            x2: (CX + dx * (t - len)).toFixed(2), y2: (CY + dy * (t - len)).toFixed(2),
++            stroke: major ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.28)',
++            'stroke-width': major ? 1.4 : 0.9,
++            'stroke-linecap': 'round',
++        }));
++    }
++}
++
++function hand(length, width, color, tail) {
++    return svgEl('line', {
++        x1: CX, y1: CY + (tail || 0), x2: CX, y2: CY - length,
++        stroke: color, 'stroke-width': width, 'stroke-linecap': 'round',
++    });
++}
++
++export function createClock() {
++    const card = el('div', 'tt-audio-clock');
++
++    const svg = svgEl('svg', { viewBox: `0 0 ${VIEW_W} ${VIEW_H}`, class: 'tt-audio-clock-face' });
++    buildTicks(svg);
++    const hourHand = hand(17, 3.4, '#F2F2F2');
++    const minuteHand = hand(27, 3, '#F2F2F2');
++    const secondHand = hand(33, 1, ACCENT, 7);
++    svg.appendChild(hourHand);
++    svg.appendChild(minuteHand);
++    svg.appendChild(secondHand);
++    svg.appendChild(svgEl('circle', { cx: CX, cy: CY, r: 3.4, fill: '#F2F2F2' }));
++    svg.appendChild(svgEl('circle', { cx: CX, cy: CY, r: 1.8, fill: ACCENT }));
++    card.appendChild(svg);
++
++    const date = el('div', 'tt-audio-clock-date');
++    const dayMonth = el('span');
++    const weekday = el('span', 'tt-audio-clock-weekday');
++    date.appendChild(dayMonth);
++    date.appendChild(weekday);
++    card.appendChild(date);
++
++    const hours = el('div', 'tt-audio-clock-digits tt-audio-clock-hours');
++    const minutes = el('div', 'tt-audio-clock-digits tt-audio-clock-minutes');
++    card.appendChild(hours);
++    card.appendChild(minutes);
++
++    const weather = el('div', 'tt-audio-clock-weather');
++    weather.style.display = 'none';
++    card.appendChild(weather);
++
++    const pad = (n) => (n < 10 ? '0' : '') + n;
++    const lang = navigator.language || undefined;
++
++    function update() {
++        const now = new Date();
++        const h = now.getHours();
++        const m = now.getMinutes();
++        const s = now.getSeconds();
++        hours.textContent = pad(h);
++        minutes.textContent = pad(m);
++        hourHand.setAttribute('transform', `rotate(${((h % 12) + m / 60) * 30} ${CX} ${CY})`);
++        minuteHand.setAttribute('transform', `rotate(${(m + s / 60) * 6} ${CX} ${CY})`);
++        secondHand.setAttribute('transform', `rotate(${s * 6} ${CX} ${CY})`);
++        try {
++            dayMonth.textContent = now.toLocaleDateString(lang, { day: 'numeric', month: 'short' }) + ' ';
++            weekday.textContent = now.toLocaleDateString(lang, { weekday: 'short' });
++        } catch (e) {
++            dayMonth.textContent = pad(now.getDate()) + '/' + pad(now.getMonth() + 1) + ' ';
++            weekday.textContent = '';
++        }
++    }
++
++    // icon: an SVG element, label: e.g. "Couvert", temp: e.g. 10.
++    function setWeather(icon, label, temp) {
++        while (weather.firstChild) weather.removeChild(weather.firstChild);
++        icon.setAttribute('class', 'tt-audio-clock-weather-icon');
++        weather.appendChild(icon);
++        weather.appendChild(el('span', '', `${label} ${temp}°`));
++        weather.style.display = '';
++    }
++
++    update();
++    return { element: card, update, setWeather };
++}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..2423ee9
+index 0000000..ee8c2ea
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,496 @@
+@@ -0,0 +1,534 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -217,36 +344,81 @@ index 0000000..2423ee9
 +}
 +
 +.tt-audio-clock {
-+    display: flex;
-+    justify-content: center;
++    /* Every size inside the card is in em, so the card scales from font-size. */
++    font-size: 1vh;
++    position: relative;
++    width: 52em;
++    height: 27.04em;
 +    margin-bottom: 2.5vh;
-+    font-size: 12vh;
++    border-radius: 4.2em;
++    background: rgba(28, 28, 30, 0.92);
++    box-shadow: 0 1.5em 4em rgba(0, 0, 0, 0.4);
++    overflow: hidden;
++    color: #fff;
++}
++
++.tt-audio-clock-face {
++    position: absolute;
++    top: 0;
++    left: 0;
++    width: 100%;
++    height: 100%;
++}
++
++.tt-audio-clock-date {
++    position: absolute;
++    top: 19%;
++    left: 0;
++    right: 0;
++    text-align: center;
++    font-size: 2.5em;
++    font-weight: 600;
++    color: rgba(255, 255, 255, 0.85);
++}
++
++.tt-audio-clock-weekday {
++    color: #3B7BFF;
++}
++
++.tt-audio-clock-digits {
++    position: absolute;
++    top: 50%;
++    width: 38%;
++    font-size: 9.4em;
 +    font-weight: 700;
 +    line-height: 1;
 +    font-variant-numeric: tabular-nums;
 +    letter-spacing: -0.02em;
-+    color: rgba(255, 255, 255, 0.94);
-+    text-shadow: 0 0.8vh 3vh rgba(0, 0, 0, 0.35);
++    transform: translateY(-50%);
 +}
 +
-+.tt-audio-clock-time {
-+    position: relative;
++.tt-audio-clock-hours {
++    right: 59%;
++    text-align: right;
 +}
 +
-+.tt-audio-clock-icon {
++.tt-audio-clock-minutes {
++    left: 59%;
++    text-align: left;
++}
++
++.tt-audio-clock-weather {
 +    position: absolute;
-+    right: 100%;
-+    top: 50%;
-+    width: 7vh;
-+    height: 7vh;
-+    margin: -3.5vh 3vh 0 0;
-+    fill: currentColor;
-+    opacity: 0.75;
++    bottom: 17%;
++    left: 0;
++    right: 0;
++    display: flex;
++    align-items: center;
++    justify-content: center;
++    font-size: 2.5em;
++    font-weight: 600;
++    color: rgba(255, 255, 255, 0.85);
 +}
 +
-+.tt-audio-clock-colon {
-+    margin: 0 0.15em;
-+    animation: tt-audio-blink 1s steps(1) infinite;
++.tt-audio-clock-weather-icon {
++    width: 1.5em;
++    height: 1.5em;
++    margin-right: 0.35em;
 +}
 +
 +.tt-audio-content {
@@ -263,8 +435,8 @@ index 0000000..2423ee9
 +}
 +
 +.tt-audio-art {
-+    width: 60vh;
-+    height: 60vh;
++    width: 52vh;
++    height: 52vh;
 +    border-radius: 2.2vh;
 +    background-color: rgba(255, 255, 255, 0.08);
 +    background-size: cover;
@@ -600,14 +772,8 @@ index 0000000..2423ee9
 +}
 +
 +.tt-audio-ambient .tt-audio-clock {
-+    font-size: 6.5vh;
++    font-size: 0.577vh;
 +    margin-bottom: 1.5vh;
-+}
-+
-+.tt-audio-ambient .tt-audio-clock-icon {
-+    width: 4vh;
-+    height: 4vh;
-+    margin: -2vh 1.8vh 0 0;
 +}
 +
 +.tt-audio-ambient .tt-audio-info {
@@ -659,22 +825,22 @@ index 0000000..2423ee9
 +    .tt-audio-weather { justify-content: center; flex-wrap: wrap; margin-bottom: 2.5vh; }
 +    .tt-audio-weather-day { width: 14vw; margin: 0 1vw; }
 +    .tt-audio-weather-city { width: 100%; margin: 1vh 0 0; text-align: center; }
-+    .tt-audio-clock { font-size: 7vh; margin-bottom: 2vh; }
-+    .tt-audio-clock-icon { width: 4.5vh; height: 4.5vh; margin: -2.25vh 1.8vh 0 0; }
++    .tt-audio-clock { font-size: calc(80vw / 52); margin: 0 auto 2vh; }
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..f451ba8
+index 0000000..2bf1f76
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,577 @@
+@@ -0,0 +1,570 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode.
 +
 +import { t } from 'i18next';
 +import css from './audioOnly.css';
-+import { createWeather } from './audioWeather.js';
++import { createWeather, weatherIcon, kindFor } from './audioWeather.js';
++import { createClock } from './audioClock.js';
 +import { createBurnInGuard } from './audioBurnIn.js';
 +
 +const SEEK_STEP = 10;
@@ -759,7 +925,6 @@ index 0000000..f451ba8
 +    play: ['M15 9.5v29c0 1.6 1.7 2.5 3 1.7l23-14.5c1.3-.8 1.3-2.6 0-3.4L18 7.8c-1.3-.8-3 .1-3 1.7z'],
 +    pause: ['M12 8h7.5v32H12z', 'M28.5 8H36v32h-7.5z'],
 +    back: ['M24 6a18 18 0 1 1-17.6 21.8 1.8 1.8 0 0 1 3.5-.8A14.4 14.4 0 1 0 24 9.6v3.9c0 .9-1 1.4-1.7.9l-6.6-5a1.1 1.1 0 0 1 0-1.8l6.6-5c.7-.5 1.7 0 1.7.9z'],
-+    clock: ['M24 4a20 20 0 1 0 0 40 20 20 0 0 0 0-40zm0 3.6a16.4 16.4 0 1 1 0 32.8 16.4 16.4 0 0 1 0-32.8z', 'M22.2 12h3.6v11.3l7.6 4.4-1.8 3.1-9.4-5.4z'],
 +    previous: ['M8 9h4.5v30H8z', 'M41 10.6v26.8c0 1.5-1.6 2.4-2.9 1.6L16.4 25.6c-1.2-.8-1.2-2.5 0-3.3L38.1 9c1.3-.8 2.9.1 2.9 1.6z'],
 +    next: ['M35.5 9H40v30h-4.5z', 'M7 10.6v26.8c0 1.5 1.6 2.4 2.9 1.6l21.7-13.4c1.2-.8 1.2-2.5 0-3.3L9.9 9C8.6 8.2 7 9.1 7 10.6z'],
 +    forward: ['M24 6a18 18 0 1 0 17.6 21.8 1.8 1.8 0 0 0-3.5-.8A14.4 14.4 0 1 1 24 9.6v3.9c0 .9 1 1.4 1.7.9l6.6-5a1.1 1.1 0 0 0 0-1.8l-6.6-5c-.7-.5-1.7 0-1.7.9z'],
@@ -793,25 +958,21 @@ index 0000000..f451ba8
 +
 +    const artWrap = el('div', 'tt-audio-art-wrap');
 +
-+    // Large digital clock above the artwork.
-+    // The icon hangs off the left of the time so the digits stay centred.
-+    const clock = el('div', 'tt-audio-clock');
-+    const time = el('span', 'tt-audio-clock-time');
-+    time.appendChild(svgIcon('tt-audio-clock-icon', ICONS.clock));
-+    els.clockHours = el('span');
-+    els.clockMinutes = el('span');
-+    time.appendChild(els.clockHours);
-+    time.appendChild(el('span', 'tt-audio-clock-colon', ':'));
-+    time.appendChild(els.clockMinutes);
-+    clock.appendChild(time);
-+    artWrap.appendChild(clock);
++    // Widget-style clock above the artwork.
++    els.clock = createClock();
++    artWrap.appendChild(els.clock.element);
 +
 +    els.art = el('div', 'tt-audio-art');
 +    artWrap.appendChild(els.art);
 +    content.appendChild(artWrap);
 +
 +    const info = el('div', 'tt-audio-info');
-+    els.weather = createWeather(t('player.audioOnly.today'));
++    els.weather = createWeather(t('player.audioOnly.today'), (data) => {
++        // Today's conditions also go under the clock.
++        const today = data.days[0];
++        const kind = kindFor(today.code);
++        els.clock.setWeather(weatherIcon(kind), t('player.audioOnly.conditions.' + kind), today.max);
++    });
 +    info.appendChild(els.weather.element);
 +
 +    els.title = el('div', 'tt-audio-title');
@@ -892,10 +1053,7 @@ index 0000000..f451ba8
 +}
 +
 +function updateClock() {
-+    const now = new Date();
-+    const pad = (n) => (n < 10 ? '0' : '') + n;
-+    els.clockHours.textContent = pad(now.getHours());
-+    els.clockMinutes.textContent = pad(now.getMinutes());
++    els.clock.update();
 +}
 +
 +function setPlayIcon(paused) {
@@ -1247,14 +1405,14 @@ index 0000000..f451ba8
 +export { enableAudioOnly, disableAudioOnly, toggleAudioOnly };
 diff --git a/mods/features/audioWeather.js b/mods/features/audioWeather.js
 new file mode 100644
-index 0000000..399297b
+index 0000000..21554de
 --- /dev/null
 +++ b/mods/features/audioWeather.js
-@@ -0,0 +1,250 @@
+@@ -0,0 +1,253 @@
 +// 5-day weather row for the audio-only screen.
 +// YouTube TV's CSP only lets the page reach Google/YouTube hosts, so the
 +// forecast is relayed through a public Google Sheet: its A1 cell runs
-+// IMPORTDATA on Open-Meteo for the location found from the TV's IP (Morges),
++// IMPORTDATA on Open-Meteo for the location found from the TV's IP,
 +// and G1 holds the city name. The sheet is read through the Visualization
 +// API, which allows www.youtube.com. Cached for an hour in localStorage.
 +
@@ -1327,7 +1485,7 @@ index 0000000..399297b
 +}
 +
 +// WMO weather codes -> icon kind.
-+function kindFor(code) {
++export function kindFor(code) {
 +    if (code === 0) return 'clear';
 +    if (code === 1 || code === 2) return 'partly';
 +    if (code === 3) return 'cloudy';
@@ -1338,7 +1496,7 @@ index 0000000..399297b
 +    return 'cloudy';
 +}
 +
-+function weatherIcon(kind) {
++export function weatherIcon(kind) {
 +    const svg = svgEl('svg', { viewBox: '0 0 48 48', class: 'tt-audio-weather-icon' });
 +    switch (kind) {
 +        case 'clear':
@@ -1482,7 +1640,7 @@ index 0000000..399297b
 +}
 +
 +// Creates the weather row; it stays hidden until a forecast is available.
-+export function createWeather(todayLabel) {
++export function createWeather(todayLabel, onData) {
 +    const container = el('div', 'tt-audio-weather');
 +    container.style.display = 'none';
 +    let lastRefresh = 0;
@@ -1491,7 +1649,10 @@ index 0000000..399297b
 +        if (Date.now() - lastRefresh < CACHE_TTL_MS) return;
 +        lastRefresh = Date.now();
 +        loadForecast()
-+            .then((data) => render(container, data, todayLabel))
++            .then((data) => {
++                render(container, data, todayLabel);
++                if (onData) onData(data);
++            })
 +            .catch((e) => {
 +                // Try again sooner after a failure (network not ready yet, etc.).
 +                lastRefresh = Date.now() - CACHE_TTL_MS + 5 * 60 * 1000;
@@ -1569,10 +1730,10 @@ index 3d2d10d..d9b7216 100644
              window.h5vcc.tizentube.EnterPIP();
              break;
 diff --git a/mods/translations/resources/en.json b/mods/translations/resources/en.json
-index 741901a..bd17463 100644
+index 741901a..e4eb8f3 100644
 --- a/mods/translations/resources/en.json
 +++ b/mods/translations/resources/en.json
-@@ -294,6 +294,14 @@
+@@ -294,6 +294,23 @@
              "button": "Share",
              "qrCodeScanMessage": "Scan the QR code below to share this video."
          },
@@ -1580,6 +1741,15 @@ index 741901a..bd17463 100644
 +            "button": "Audio only",
 +            "badge": "Audio mode",
 +            "exit": "Show video",
++            "conditions": {
++                "clear": "Sunny",
++                "partly": "Partly cloudy",
++                "cloudy": "Cloudy",
++                "fog": "Fog",
++                "rain": "Rain",
++                "snow": "Snow",
++                "storm": "Storm"
++            },
 +            "today": "Today",
 +            "live": "Live",
 +            "hint": "OK: play/pause  ·  ◀ ▶: 10 s  ·  CH +/−: next/previous  ·  Back: show video"
@@ -1588,10 +1758,10 @@ index 741901a..bd17463 100644
          "chapters": {
              "title": "Chapters",
 diff --git a/mods/translations/resources/fr.json b/mods/translations/resources/fr.json
-index dc83f29..1655171 100644
+index dc83f29..3536878 100644
 --- a/mods/translations/resources/fr.json
 +++ b/mods/translations/resources/fr.json
-@@ -294,6 +294,14 @@
+@@ -294,6 +294,23 @@
              "button": "Partager",
              "qrCodeScanMessage": "Scannez le code QR ci-dessous pour partager cette vidéo."
          },
@@ -1599,6 +1769,15 @@ index dc83f29..1655171 100644
 +            "button": "Audio seulement",
 +            "badge": "Mode audio",
 +            "exit": "Afficher la vidéo",
++            "conditions": {
++                "clear": "Ensoleillé",
++                "partly": "Éclaircies",
++                "cloudy": "Couvert",
++                "fog": "Brouillard",
++                "rain": "Pluie",
++                "snow": "Neige",
++                "storm": "Orage"
++            },
 +            "today": "Auj.",
 +            "live": "En direct",
 +            "hint": "OK : lecture/pause  ·  ◀ ▶ : 10 s  ·  CH +/− : suivant/précédent  ·  Retour : afficher la vidéo"
