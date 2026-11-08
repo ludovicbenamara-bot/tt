@@ -289,10 +289,10 @@ index 0000000..fb236f6
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..85013a0
+index 0000000..1c7f306
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,527 @@
+@@ -0,0 +1,502 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -536,30 +536,11 @@ index 0000000..85013a0
 +}
 +
 +/* Sound animation. */
-+.tt-audio-wave {
-+    display: flex;
-+    align-items: center;
-+    justify-content: space-between;
-+    height: 9vh;
-+    margin: 4.5vh 0 3.5vh;
-+}
-+
-+.tt-audio-wave span {
-+    flex: 0 0 auto;
-+    width: 0.55vh;
-+    height: 100%;
-+    border-radius: 0.3vh;
-+    background: rgba(255, 255, 255, 0.85);
-+    transform: scaleY(0.12);
-+    animation-name: tt-audio-wave;
-+    animation-timing-function: ease-in-out;
-+    animation-iteration-count: infinite;
-+    animation-direction: alternate;
-+}
-+
-+.tt-audio-paused .tt-audio-wave span {
-+    animation-play-state: paused;
-+    opacity: 0.35;
++.tt-audio-spectrum {
++    display: block;
++    width: 100%;
++    height: 12vh;
++    margin: 3vh 0 2.5vh;
 +}
 +
 +.tt-audio-bar {
@@ -694,11 +675,6 @@ index 0000000..85013a0
 +    50% { opacity: 0.25; }
 +}
 +
-+@keyframes tt-audio-wave {
-+    from { transform: scaleY(0.12); }
-+    to { transform: scaleY(var(--h, 0.8)); }
-+}
-+
 +@keyframes tt-audio-drift {
 +    0% { transform: translate(-10%, -8%) scale(3.4) rotate(0deg); }
 +    100% { transform: translate(10%, 8%) scale(3.9) rotate(8deg); }
@@ -745,7 +721,7 @@ index 0000000..85013a0
 +}
 +
 +.tt-audio-ambient .tt-audio-weather,
-+.tt-audio-ambient .tt-audio-wave,
++.tt-audio-ambient .tt-audio-spectrum,
 +.tt-audio-ambient .tt-audio-progress,
 +.tt-audio-ambient .tt-audio-controls,
 +.tt-audio-ambient .tt-audio-footer {
@@ -811,8 +787,7 @@ index 0000000..85013a0
 +
 +    .tt-audio-title { font-size: 3vh; }
 +    .tt-audio-author { font-size: 2.2vh; }
-+    .tt-audio-wave { height: 6vh; margin: 3vh 0 2.5vh; }
-+    .tt-audio-wave span { width: 0.6vw; }
++    .tt-audio-spectrum { height: 8vh; margin: 2.5vh 0 2vh; }
 +    .tt-audio-btn { width: 9vh; height: 9vh; margin: 0 2vh; }
 +    .tt-audio-btn-main { width: 11vh; height: 11vh; }
 +    .tt-audio-hint { display: none; }
@@ -822,10 +797,10 @@ index 0000000..85013a0
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..2bf1f76
+index 0000000..adff782
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,570 @@
+@@ -0,0 +1,564 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode.
@@ -834,6 +809,7 @@ index 0000000..2bf1f76
 +import css from './audioOnly.css';
 +import { createWeather, weatherIcon, kindFor } from './audioWeather.js';
 +import { createClock } from './audioClock.js';
++import { createSpectrum } from './audioSpectrum.js';
 +import { createBurnInGuard } from './audioBurnIn.js';
 +
 +const SEEK_STEP = 10;
@@ -923,8 +899,6 @@ index 0000000..2bf1f76
 +    forward: ['M24 6a18 18 0 1 0 17.6 21.8 1.8 1.8 0 0 0-3.5-.8A14.4 14.4 0 1 1 24 9.6v3.9c0 .9 1 1.4 1.7.9l6.6-5a1.1 1.1 0 0 0 0-1.8l-6.6-5c-.7-.5-1.7 0-1.7.9z'],
 +};
 +
-+const WAVE_BARS = 48;
-+
 +function buildOverlay() {
 +    // YouTube's CSP only allows nonce'd styles, so append to an existing one
 +    // (same approach as ui/ui.js).
@@ -973,17 +947,9 @@ index 0000000..2bf1f76
 +    info.appendChild(els.title);
 +    info.appendChild(els.author);
 +
-+    // Sound animation: bars with their own speed and height, taller in the middle.
-+    els.wave = el('div', 'tt-audio-wave');
-+    for (let i = 0; i < WAVE_BARS; i++) {
-+        const bar = el('span');
-+        const envelope = Math.sin(Math.PI * (i + 0.5) / WAVE_BARS);
-+        bar.style.setProperty('--h', (0.25 + 0.75 * envelope * (0.55 + 0.45 * Math.random())).toFixed(2));
-+        bar.style.animationDuration = (0.55 + Math.random() * 0.7).toFixed(2) + 's';
-+        bar.style.animationDelay = (-Math.random() * 1.2).toFixed(2) + 's';
-+        els.wave.appendChild(bar);
-+    }
-+    info.appendChild(els.wave);
++    // Sound animation: Winamp-style LED spectrum analyser.
++    els.spectrum = createSpectrum();
++    info.appendChild(els.spectrum.element);
 +
 +    const progress = el('div', 'tt-audio-progress');
 +    els.bar = el('div', 'tt-audio-bar');
@@ -1160,6 +1126,7 @@ index 0000000..2bf1f76
 +        setPlayIcon(video.paused);
 +    }
 +    overlay.classList.toggle('tt-audio-paused', video.paused);
++    els.spectrum.setPaused(video.paused);
 +}
 +
 +function tick() {
@@ -1364,6 +1331,7 @@ index 0000000..2bf1f76
 +    log('enabled');
 +    tick();
 +    els.burnIn.reset();
++    els.spectrum.start();
 +    tickInterval = setInterval(tick, 500);
 +}
 +
@@ -1374,6 +1342,7 @@ index 0000000..2bf1f76
 +    clearInterval(tickInterval);
 +    tickInterval = null;
 +    overlay.style.display = 'none';
++    els.spectrum.stop();
 +}
 +
 +function toggleAudioOnly() {
@@ -1396,6 +1365,146 @@ index 0000000..2bf1f76
 +window.addEventListener('keyup', keyHandler, true);
 +
 +export { enableAudioOnly, disableAudioOnly, toggleAudioOnly };
+diff --git a/mods/features/audioSpectrum.js b/mods/features/audioSpectrum.js
+new file mode 100644
+index 0000000..e72815d
+--- /dev/null
++++ b/mods/features/audioSpectrum.js
+@@ -0,0 +1,134 @@
++// Winamp-style LED spectrum analyser for the audio-only screen: columns of
++// green LED segments on a dark dot matrix, white peak caps that hold then
++// fall, and a blue dotted baseline.
++// The page cannot read the video's audio (doing so could cut the sound on
++// TV), so the bands follow a lively simulated signal: a beat pulse, a bass-
++// heavy envelope and per-band noise, with fast attack and slow release.
++
++const BANDS = 24;
++const ROWS = 14;
++const FRAME_MS = 33;
++const GAP = 0.22;
++const PEAK_HOLD_MS = 450;
++const PEAK_FALL_PER_FRAME = 0.018;
++const ATTACK = 0.55;
++const RELEASE = 0.12;
++
++const COLORS = {
++    off: 'rgba(120, 140, 120, 0.16)',
++    low: [96, 196, 40],
++    high: [176, 240, 72],
++    peak: 'rgba(235, 240, 235, 0.95)',
++    base: 'rgba(80, 150, 255, 0.85)',
++};
++
++function mix(a, b, t) {
++    return `rgb(${Math.round(a[0] + (b[0] - a[0]) * t)}, ${Math.round(a[1] + (b[1] - a[1]) * t)}, ${Math.round(a[2] + (b[2] - a[2]) * t)})`;
++}
++
++export function createSpectrum() {
++    const canvas = document.createElement('canvas');
++    canvas.className = 'tt-audio-spectrum';
++    const ctx = canvas.getContext('2d');
++
++    const levels = new Array(BANDS).fill(0);
++    const peaks = new Array(BANDS).fill(0);
++    const peakHeldAt = new Array(BANDS).fill(0);
++    const phases = Array.from({ length: BANDS }, () => Math.random() * Math.PI * 2);
++    const rowColors = Array.from({ length: ROWS }, (_, r) => mix(COLORS.low, COLORS.high, r / (ROWS - 1)));
++
++    let timer = null;
++    let paused = false;
++    let beatAt = 0;
++    let beatInterval = 500;
++
++    function resize() {
++        const ratio = window.devicePixelRatio || 1;
++        const w = Math.round(canvas.clientWidth * ratio);
++        const h = Math.round(canvas.clientHeight * ratio);
++        if (w && h && (canvas.width !== w || canvas.height !== h)) {
++            canvas.width = w;
++            canvas.height = h;
++        }
++    }
++
++    function targetLevel(band, now) {
++        if (paused) return 0;
++        if (now - beatAt > beatInterval) {
++            beatAt = now;
++            beatInterval = 420 + Math.random() * 180;
++        }
++        const beat = Math.max(0, 1 - (now - beatAt) / 260);
++        const x = band / (BANDS - 1);
++        // Louder lows, a bump in the mids, quieter highs.
++        const envelope = 0.7 - 0.3 * x + 0.12 * Math.sin(x * Math.PI);
++        // Two slow oscillators per band so neighbouring bands drift apart.
++        const wobble = 0.5 + 0.25 * Math.sin(now / (160 + band * 29) + phases[band]) +
++            0.25 * Math.sin(now / (410 + band * 17) - phases[band] * 2);
++        const noise = Math.random();
++        const bassKick = beat * Math.max(0, 1 - x * 1.6) * 0.55;
++        return Math.min(1, envelope * wobble * wobble * 1.3 + noise * noise * 0.3 + bassKick);
++    }
++
++    function draw() {
++        const now = Date.now();
++        // Nothing to draw while hidden (e.g. ambient mode).
++        if (canvas.offsetParent === null) return;
++        resize();
++        const W = canvas.width;
++        const H = canvas.height;
++        if (!W || !H) return;
++
++        const colW = W / BANDS;
++        const baseH = H * 0.06;
++        const rowH = (H - baseH * 2) / ROWS;
++        const cellW = colW * (1 - GAP);
++        const cellH = rowH * (1 - GAP);
++        ctx.clearRect(0, 0, W, H);
++
++        for (let b = 0; b < BANDS; b++) {
++            const target = targetLevel(b, now);
++            const k = target > levels[b] ? ATTACK : RELEASE;
++            levels[b] += (target - levels[b]) * k;
++
++            if (levels[b] >= peaks[b]) {
++                peaks[b] = levels[b];
++                peakHeldAt[b] = now;
++            } else if (now - peakHeldAt[b] > PEAK_HOLD_MS) {
++                peaks[b] = Math.max(0, peaks[b] - PEAK_FALL_PER_FRAME);
++            }
++
++            const lit = Math.round(levels[b] * ROWS);
++            const peakRow = Math.min(ROWS - 1, Math.round(peaks[b] * ROWS));
++            const x = b * colW + (colW - cellW) / 2;
++            for (let r = 0; r < ROWS; r++) {
++                const y = H - baseH * 2 - (r + 1) * rowH + (rowH - cellH) / 2;
++                if (r < lit) ctx.fillStyle = rowColors[r];
++                else if (r === peakRow && peaks[b] > 0.04) ctx.fillStyle = COLORS.peak;
++                else ctx.fillStyle = COLORS.off;
++                ctx.fillRect(x, y, cellW, r === peakRow && r >= lit ? cellH * 0.55 : cellH);
++            }
++
++            // Blue dotted baseline, two dots per band.
++            ctx.fillStyle = COLORS.base;
++            const dot = Math.min(baseH, colW * 0.18);
++            ctx.fillRect(x, H - baseH, dot, dot);
++            ctx.fillRect(x + cellW / 2, H - baseH, dot, dot);
++        }
++    }
++
++    return {
++        element: canvas,
++        start() {
++            if (timer) return;
++            timer = setInterval(draw, FRAME_MS);
++        },
++        stop() {
++            clearInterval(timer);
++            timer = null;
++        },
++        setPaused(value) {
++            paused = value;
++        },
++    };
++}
 diff --git a/mods/features/audioWeather.js b/mods/features/audioWeather.js
 new file mode 100644
 index 0000000..b9f85b1
