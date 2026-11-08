@@ -289,7 +289,7 @@ index 0000000..fb236f6
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..ed35409
+index 0000000..85013a0
 --- /dev/null
 +++ b/mods/features/audioOnly.css
 @@ -0,0 +1,527 @@
@@ -470,7 +470,7 @@ index 0000000..ed35409
 +    align-items: stretch;
 +    /* The five days share the full width of the details column. */
 +    gap: 1.4vh;
-+    margin-bottom: 3.5vh;
++    margin-bottom: 6vh;
 +}
 +
 +.tt-audio-weather-day {
