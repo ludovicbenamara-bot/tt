@@ -289,10 +289,10 @@ index 0000000..fb236f6
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..ee8c2ea
+index 0000000..25a1446
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,534 @@
+@@ -0,0 +1,536 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -351,8 +351,10 @@ index 0000000..ee8c2ea
 +    height: 27.04em;
 +    margin-bottom: 2.5vh;
 +    border-radius: 4.2em;
-+    background: rgba(28, 28, 30, 0.92);
-+    box-shadow: 0 1.5em 4em rgba(0, 0, 0, 0.4);
++    /* Translucent glass: the animated, blurred artwork shows through. */
++    background: rgba(255, 255, 255, 0.1);
++    border: 0.15em solid rgba(255, 255, 255, 0.16);
++    box-shadow: 0 1.5em 4em rgba(0, 0, 0, 0.25), inset 0 0.1em 0 rgba(255, 255, 255, 0.12);
 +    overflow: hidden;
 +    color: #fff;
 +}
