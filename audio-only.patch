@@ -27,12 +27,145 @@ index 0cb2223..e0c9cc7 100644
      if (r?.transportControls?.transportControlsRenderer?.promotedActions && configRead('enableSponsorBlockHighlight')) {
        if (window?.sponsorblock?.segments) {
          const category = window.sponsorblock.segments.find(seg => seg.category === 'poi_highlight');
+diff --git a/mods/features/audioBurnIn.js b/mods/features/audioBurnIn.js
+new file mode 100644
+index 0000000..2dfe900
+--- /dev/null
++++ b/mods/features/audioBurnIn.js
+@@ -0,0 +1,127 @@
++// Screen burn-in protection for the audio-only screen. Three levels:
++//  1. Pixel shift (always on): the whole layout drifts a few pixels along a
++//     Lissajous curve, so no pixel shows the same thing for long.
++//  2. Dim: after DIM_AFTER_MS without a remote key, static UI fades down.
++//  3. Ambient: after AMBIENT_AFTER_MS, only artwork, title and clock remain on
++//     a near-black screen, and that block moves to a new place regularly.
++// The first key after level 2 or 3 only wakes the screen.
++
++export const DIM_AFTER_MS = 3 * 60 * 1000;
++export const AMBIENT_AFTER_MS = 10 * 60 * 1000;
++const SHIFT_INTERVAL_MS = 60 * 1000;
++// About 12 px on a 1080p screen.
++const SHIFT_AMPLITUDE_VH = 1.1;
++const AMBIENT_MOVE_INTERVAL_MS = 30 * 1000;
++const AMBIENT_FADE_MS = 1200;
++// How far the ambient block may wander from the centre.
++const AMBIENT_RANGE_VW = 22;
++const AMBIENT_RANGE_VH = 20;
++
++export function createBurnInGuard(overlay, content, footer, timings) {
++    const dimAfter = (timings && timings.dimAfter) || DIM_AFTER_MS;
++    const ambientAfter = (timings && timings.ambientAfter) || AMBIENT_AFTER_MS;
++    const shiftInterval = (timings && timings.shiftInterval) || SHIFT_INTERVAL_MS;
++    const ambientMoveInterval = (timings && timings.ambientMoveInterval) || AMBIENT_MOVE_INTERVAL_MS;
++
++    let lastActivity = Date.now();
++    let shiftStep = 0;
++    let lastShiftAt = 0;
++    let shift = { x: 0, y: 0 };
++    let ambientOffset = { x: 0, y: 0 };
++    let lastAmbientMoveAt = 0;
++    let moveTimer = null;
++
++    function applyTransforms() {
++        content.style.transform = `translate(calc(${shift.x}vh + ${ambientOffset.x}vw), calc(${shift.y}vh + ${ambientOffset.y}vh))`;
++        footer.style.transform = `translate(${shift.x}vh, ${shift.y}vh)`;
++    }
++
++    function nextShift() {
++        shiftStep++;
++        // Different frequencies on each axis trace a figure that covers the area.
++        shift = {
++            x: +(SHIFT_AMPLITUDE_VH * Math.sin(shiftStep * 0.7)).toFixed(2),
++            y: +(SHIFT_AMPLITUDE_VH * Math.sin(shiftStep * 1.1)).toFixed(2),
++        };
++        applyTransforms();
++    }
++
++    function moveAmbientBlock() {
++        clearTimeout(moveTimer);
++        overlay.classList.add('tt-audio-ambient-moving');
++        moveTimer = setTimeout(() => {
++            ambientOffset = {
++                x: +((Math.random() * 2 - 1) * AMBIENT_RANGE_VW).toFixed(1),
++                y: +((Math.random() * 2 - 1) * AMBIENT_RANGE_VH).toFixed(1),
++            };
++            content.style.transition = 'none';
++            applyTransforms();
++            // Force the jump to happen before transitions come back.
++            void content.offsetWidth;
++            content.style.removeProperty('transition');
++            overlay.classList.remove('tt-audio-ambient-moving');
++        }, AMBIENT_FADE_MS);
++    }
++
++    function leaveAmbient() {
++        clearTimeout(moveTimer);
++        overlay.classList.remove('tt-audio-ambient', 'tt-audio-ambient-moving');
++        if (ambientOffset.x || ambientOffset.y) {
++            ambientOffset = { x: 0, y: 0 };
++            content.style.transition = 'none';
++            applyTransforms();
++            void content.offsetWidth;
++            content.style.removeProperty('transition');
++        }
++    }
++
++    function isIdle() {
++        return overlay.classList.contains('tt-audio-dim') || overlay.classList.contains('tt-audio-ambient');
++    }
++
++    return {
++        // Call on every remote key. Returns true if the screen was dimmed or in
++        // ambient mode: that key should then only wake the screen.
++        wake() {
++            const wasIdle = isIdle();
++            lastActivity = Date.now();
++            if (wasIdle) {
++                overlay.classList.remove('tt-audio-dim');
++                leaveAmbient();
++            }
++            return wasIdle;
++        },
++
++        // Call regularly (the audio screen ticks every 500 ms).
++        tick() {
++            const now = Date.now();
++            const idle = now - lastActivity;
++
++            if (now - lastShiftAt >= shiftInterval) {
++                lastShiftAt = now;
++                nextShift();
++            }
++
++            overlay.classList.toggle('tt-audio-dim', idle >= dimAfter && idle < ambientAfter);
++
++            if (idle >= ambientAfter) {
++                if (!overlay.classList.contains('tt-audio-ambient')) {
++                    overlay.classList.add('tt-audio-ambient');
++                    lastAmbientMoveAt = 0;
++                }
++                if (now - lastAmbientMoveAt >= ambientMoveInterval) {
++                    lastAmbientMoveAt = now;
++                    moveAmbientBlock();
++                }
++            }
++        },
++
++        // Call when the audio screen opens.
++        reset() {
++            lastActivity = Date.now();
++            lastShiftAt = Date.now();
++            overlay.classList.remove('tt-audio-dim');
++            leaveAmbient();
++        },
++    };
++}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..937bb74
+index 0000000..2423ee9
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,413 @@
+@@ -0,0 +1,496 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -410,6 +543,89 @@ index 0000000..937bb74
 +    100% { transform: translate(-12%, -10%) scale(3.4) rotate(200deg); }
 +}
 +
++/* Burn-in protection (see audioBurnIn.js). */
++.tt-audio-content,
++.tt-audio-footer {
++    transition: transform 3s ease-in-out, opacity 1.2s ease;
++}
++
++.tt-audio-shade {
++    transition: background-color 1.5s ease;
++}
++
++.tt-audio-controls,
++.tt-audio-progress,
++.tt-audio-footer,
++.tt-audio-clock,
++.tt-audio-weather {
++    transition: opacity 1.5s ease;
++}
++
++/* Level 2: static UI fades down. */
++.tt-audio-dim .tt-audio-controls,
++.tt-audio-dim .tt-audio-progress,
++.tt-audio-dim .tt-audio-footer {
++    opacity: 0.35;
++}
++
++.tt-audio-dim .tt-audio-clock,
++.tt-audio-dim .tt-audio-weather {
++    opacity: 0.6;
++}
++
++/* Level 3: ambient mode, a small drifting block on a near-black screen. */
++.tt-audio-ambient .tt-audio-shade {
++    background-color: rgba(0, 0, 0, 0.88);
++}
++
++.tt-audio-ambient .tt-audio-weather,
++.tt-audio-ambient .tt-audio-wave,
++.tt-audio-ambient .tt-audio-progress,
++.tt-audio-ambient .tt-audio-controls,
++.tt-audio-ambient .tt-audio-footer {
++    display: none;
++}
++
++.tt-audio-ambient .tt-audio-content {
++    width: auto;
++}
++
++.tt-audio-ambient .tt-audio-art-wrap {
++    margin-right: 4vh;
++}
++
++.tt-audio-ambient .tt-audio-art {
++    width: 30vh;
++    height: 30vh;
++}
++
++.tt-audio-ambient .tt-audio-clock {
++    font-size: 6.5vh;
++    margin-bottom: 1.5vh;
++}
++
++.tt-audio-ambient .tt-audio-clock-icon {
++    width: 4vh;
++    height: 4vh;
++    margin: -2vh 1.8vh 0 0;
++}
++
++.tt-audio-ambient .tt-audio-info {
++    max-width: 36vw;
++}
++
++.tt-audio-ambient .tt-audio-title {
++    font-size: 3.6vh;
++}
++
++.tt-audio-ambient .tt-audio-author {
++    font-size: 2.6vh;
++}
++
++.tt-audio-ambient-moving .tt-audio-content {
++    opacity: 0;
++}
++
 +/* Portrait screens (phones): stack artwork above the details. */
 +@media (max-aspect-ratio: 1/1) {
 +    .tt-audio-content {
@@ -448,10 +664,10 @@ index 0000000..937bb74
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..b2f6ef9
+index 0000000..f451ba8
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,565 @@
+@@ -0,0 +1,577 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode.
@@ -459,6 +675,7 @@ index 0000000..b2f6ef9
 +import { t } from 'i18next';
 +import css from './audioOnly.css';
 +import { createWeather } from './audioWeather.js';
++import { createBurnInGuard } from './audioBurnIn.js';
 +
 +const SEEK_STEP = 10;
 +// Channel up/down on the remote: Starboard key codes, Android's raw key codes,
@@ -669,6 +886,8 @@ index 0000000..b2f6ef9
 +    footer.appendChild(els.exit);
 +    overlay.appendChild(footer);
 +
++    els.burnIn = createBurnInGuard(overlay, content, footer);
++
 +    document.body.appendChild(overlay);
 +}
 +
@@ -793,6 +1012,7 @@ index 0000000..b2f6ef9
 +}
 +
 +function tick() {
++    els.burnIn.tick();
 +    // Leave audio mode on its own when the player is closed.
 +    const player = getPlayer();
 +    const data = player && player.getVideoData ? player.getVideoData() : null;
@@ -935,6 +1155,13 @@ index 0000000..b2f6ef9
 +        return true;
 +    }
 +
++    // After dimming or in ambient mode, the first key only wakes the screen.
++    if (evt.type === 'keydown' && els.burnIn.wake()) {
++        evt.preventDefault();
++        evt.stopPropagation();
++        return false;
++    }
++
 +    let handled = true;
 +    if (evt.keyCode === 13 || evt.keyCode === 32) {
 +        if (evt.type === 'keydown') togglePlay();
@@ -985,6 +1212,7 @@ index 0000000..b2f6ef9
 +    overlay.style.display = 'flex';
 +    log('enabled');
 +    tick();
++    els.burnIn.reset();
 +    tickInterval = setInterval(tick, 500);
 +}
 +
