@@ -1369,17 +1369,20 @@ index 0000000..b78f87c
 +export { enableAudioOnly, disableAudioOnly, toggleAudioOnly };
 diff --git a/mods/features/audioSpectrum.js b/mods/features/audioSpectrum.js
 new file mode 100644
-index 0000000..e237686
+index 0000000..124d09c
 --- /dev/null
 +++ b/mods/features/audioSpectrum.js
-@@ -0,0 +1,212 @@
+@@ -0,0 +1,258 @@
 +// Winamp-style LED spectrum analyser for the audio-only screen: columns of
 +// LED segments on a dark dot matrix, white peak caps that hold then fall, and
 +// a blue dotted baseline. The segments take the artwork's dominant colour
 +// (green until one is found).
-+// The page cannot read the video's audio (doing so could cut the sound on
-+// TV), so the bands follow a lively simulated signal: a beat pulse, a bass-
-+// heavy envelope and per-band noise, with fast attack and slow release.
++// Cobalt plays sound through the TV's native player, so the page cannot
++// analyse it. The modified APK runs a small server on 127.0.0.1 that serves
++// Android's Visualizer spectrum of the output mix (YouTube's CSP allows
++// connect-src to localhost): while it answers, the bands follow the real
++// music. Otherwise they follow a simulated signal: a beat pulse, a bass-heavy
++// envelope and per-band noise, with fast attack and slow release.
 +
 +const BANDS = 24;
 +const ROWS = 14;
@@ -1389,6 +1392,12 @@ index 0000000..e237686
 +const PEAK_FALL_PER_FRAME = 0.018;
 +const ATTACK = 0.55;
 +const RELEASE = 0.12;
++const SPECTRUM_URL = `http://127.0.0.1:47913/bands?n=${BANDS}&from=page`;
++const POLL_MS = 50;
++// Live data older than this is ignored (server gone, app paused...).
++const LIVE_MAX_AGE_MS = 600;
++// After a failed request, wait this long before trying again.
++const RETRY_MS = 5000;
 +
 +const COLORS = {
 +    off: 'rgba(120, 140, 120, 0.16)',
@@ -1472,8 +1481,42 @@ index 0000000..e237686
 +
 +    let timer = null;
 +    let paused = false;
-+    let beatAt = 0;
-+    let beatInterval = 500;
++    let liveLevels = null;
++    let liveAt = 0;
++    let pollTimer = null;
++    let polling = false;
++
++    function poll() {
++        if (polling) return;
++        polling = true;
++        fetch(SPECTRUM_URL, { cache: 'no-store' })
++            .then((r) => (r.ok ? r.text() : ''))
++            .then((text) => {
++                const values = text ? text.split(',') : [];
++                if (values.length === BANDS) {
++                    liveLevels = values.map((v) => (+v || 0) / 255);
++                    liveAt = Date.now();
++                }
++                polling = false;
++            }, () => {
++                polling = false;
++                // No server (original APK) or not ready yet: retry later.
++                clearInterval(pollTimer);
++                pollTimer = setTimeout(startPolling, RETRY_MS);
++            });
++    }
++
++    function startPolling() {
++        clearTimeout(pollTimer);
++        clearInterval(pollTimer);
++        pollTimer = setInterval(poll, POLL_MS);
++    }
++
++    function stopPolling() {
++        clearTimeout(pollTimer);
++        clearInterval(pollTimer);
++        pollTimer = null;
++    }
 +
 +    function resize() {
 +        const ratio = window.devicePixelRatio || 1;
@@ -1518,9 +1561,10 @@ index 0000000..e237686
 +        const cellW = colW * (1 - GAP);
 +        const cellH = rowH * (1 - GAP);
 +        ctx.clearRect(0, 0, W, H);
++        const live = now - liveAt < LIVE_MAX_AGE_MS ? liveLevels : null;
 +
 +        for (let b = 0; b < BANDS; b++) {
-+            const target = targetLevel(b, now);
++            const target = live ? (paused ? 0 : live[b]) : targetLevel(b, now);
 +            const k = target > levels[b] ? ATTACK : RELEASE;
 +            levels[b] += (target - levels[b]) * k;
 +
@@ -1555,10 +1599,12 @@ index 0000000..e237686
 +        start() {
 +            if (timer) return;
 +            timer = setInterval(draw, FRAME_MS);
++            startPolling();
 +        },
 +        stop() {
 +            clearInterval(timer);
 +            timer = null;
++            stopPolling();
 +        },
 +        setPaused(value) {
 +            paused = value;
