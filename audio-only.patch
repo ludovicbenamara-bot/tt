@@ -1,0 +1,1068 @@
+diff --git a/mods/features/adblock.js b/mods/features/adblock.js
+index 0cb2223..e0c9cc7 100644
+--- a/mods/features/adblock.js
++++ b/mods/features/adblock.js
+@@ -254,6 +254,24 @@ JSON.parse = function () {
+       }
+     }
+ 
++    if (r?.transportControls?.transportControlsRenderer?.promotedActions) {
++      r.transportControls.transportControlsRenderer.promotedActions.push({
++        type: 'TRANSPORT_CONTROLS_BUTTON_TYPE_AUDIO_ONLY',
++        button: {
++          buttonRenderer: ButtonRenderer(
++            false,
++            t('player.audioOnly.button'),
++            'YOUTUBE_MUSIC',
++            {
++              clickTrackingParams: null,
++              customAction: {
++                action: 'TOGGLE_AUDIO_ONLY'
++              }
++            })
++        }
++      });
++    }
++
+     if (r?.transportControls?.transportControlsRenderer?.promotedActions && configRead('enableSponsorBlockHighlight')) {
+       if (window?.sponsorblock?.segments) {
+         const category = window.sponsorblock.segments.find(seg => seg.category === 'poi_highlight');
+diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
+new file mode 100644
+index 0000000..abbeecf
+--- /dev/null
++++ b/mods/features/audioOnly.css
+@@ -0,0 +1,352 @@
++/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
++
++.tt-audio {
++    position: fixed;
++    top: 0;
++    left: 0;
++    width: 100vw;
++    height: 100vh;
++    z-index: 2147483000;
++    display: flex;
++    align-items: center;
++    justify-content: center;
++    overflow: hidden;
++    background: #000;
++    color: #fff;
++    font-family: -apple-system, 'SF Pro Display', 'Helvetica Neue', 'YouTube Sans', Roboto, Arial, sans-serif;
++    -webkit-font-smoothing: antialiased;
++}
++
++/* Animated, heavily blurred artwork behind everything. The layer is blurred
++   at a small size and scaled up, which is far cheaper for TV GPUs. */
++.tt-audio-backdrop {
++    position: absolute;
++    top: 30%;
++    left: 30%;
++    width: 40%;
++    height: 40%;
++    background-size: cover;
++    background-position: center;
++    filter: blur(24px) saturate(1.8) brightness(0.75);
++    opacity: 0.95;
++    animation: tt-audio-drift 28s ease-in-out infinite alternate;
++}
++
++.tt-audio-backdrop-2 {
++    opacity: 0.5;
++    animation: tt-audio-drift-2 36s ease-in-out infinite alternate;
++}
++
++.tt-audio-shade {
++    position: absolute;
++    top: 0;
++    left: 0;
++    width: 100%;
++    height: 100%;
++    background:
++        radial-gradient(ellipse at 30% 50%, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.35) 70%),
++        linear-gradient(180deg, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0.45) 100%);
++}
++
++.tt-audio-clock {
++    display: flex;
++    justify-content: center;
++    margin-bottom: 2.5vh;
++    font-size: 12vh;
++    font-weight: 700;
++    line-height: 1;
++    font-variant-numeric: tabular-nums;
++    letter-spacing: -0.02em;
++    color: rgba(255, 255, 255, 0.94);
++    text-shadow: 0 0.8vh 3vh rgba(0, 0, 0, 0.35);
++}
++
++.tt-audio-clock-time {
++    position: relative;
++}
++
++.tt-audio-clock-icon {
++    position: absolute;
++    right: 100%;
++    top: 50%;
++    width: 7vh;
++    height: 7vh;
++    margin: -3.5vh 3vh 0 0;
++    fill: currentColor;
++    opacity: 0.75;
++}
++
++.tt-audio-clock-colon {
++    margin: 0 0.15em;
++    animation: tt-audio-blink 1s steps(1) infinite;
++}
++
++.tt-audio-content {
++    position: relative;
++    display: flex;
++    align-items: center;
++    width: 86vw;
++}
++
++/* Large artwork; shrinks a little when paused, like Apple Music. */
++.tt-audio-art-wrap {
++    flex: 0 0 auto;
++    margin-right: 6vw;
++}
++
++.tt-audio-art {
++    width: 60vh;
++    height: 60vh;
++    border-radius: 2.2vh;
++    background-color: rgba(255, 255, 255, 0.08);
++    background-size: cover;
++    background-position: center;
++    box-shadow: 0 4vh 10vh rgba(0, 0, 0, 0.55), 0 1vh 3vh rgba(0, 0, 0, 0.35);
++    transform: scale(1);
++    transition: transform 0.6s cubic-bezier(0.34, 1.4, 0.64, 1), box-shadow 0.6s ease;
++}
++
++/* hqdefault thumbnails are 4:3 with letterbox bars; zoom them off. */
++.tt-audio-art-letterboxed {
++    background-size: auto 134%;
++}
++
++.tt-audio-paused .tt-audio-art {
++    transform: scale(0.86);
++    box-shadow: 0 2vh 5vh rgba(0, 0, 0, 0.4);
++}
++
++.tt-audio-info {
++    flex: 1 1 auto;
++    min-width: 0;
++    max-width: 52vw;
++}
++
++.tt-audio-title {
++    font-size: 5vh;
++    font-weight: 700;
++    line-height: 1.12;
++    letter-spacing: -0.02em;
++    display: -webkit-box;
++    -webkit-line-clamp: 2;
++    -webkit-box-orient: vertical;
++    overflow: hidden;
++}
++
++.tt-audio-author {
++    margin-top: 1vh;
++    font-size: 3.4vh;
++    font-weight: 500;
++    color: rgba(255, 255, 255, 0.62);
++    white-space: nowrap;
++    overflow: hidden;
++    text-overflow: ellipsis;
++}
++
++/* Sound animation. */
++.tt-audio-wave {
++    display: flex;
++    align-items: center;
++    justify-content: space-between;
++    height: 9vh;
++    margin: 4.5vh 0 3.5vh;
++}
++
++.tt-audio-wave span {
++    flex: 0 0 auto;
++    width: 0.55vh;
++    height: 100%;
++    border-radius: 0.3vh;
++    background: rgba(255, 255, 255, 0.85);
++    transform: scaleY(0.12);
++    animation-name: tt-audio-wave;
++    animation-timing-function: ease-in-out;
++    animation-iteration-count: infinite;
++    animation-direction: alternate;
++}
++
++.tt-audio-paused .tt-audio-wave span {
++    animation-play-state: paused;
++    opacity: 0.35;
++}
++
++.tt-audio-bar {
++    position: relative;
++    height: 0.8vh;
++    border-radius: 0.4vh;
++    background: rgba(255, 255, 255, 0.22);
++    overflow: hidden;
++    cursor: pointer;
++}
++
++.tt-audio-fill {
++    height: 100%;
++    width: 0;
++    border-radius: 0.4vh;
++    background: rgba(255, 255, 255, 0.92);
++    transition: width 0.5s linear;
++}
++
++.tt-audio-times {
++    display: flex;
++    align-items: center;
++    justify-content: space-between;
++    margin-top: 1.4vh;
++    font-size: 2vh;
++    font-weight: 600;
++    font-variant-numeric: tabular-nums;
++    color: rgba(255, 255, 255, 0.55);
++}
++
++.tt-audio-badge {
++    padding: 0.4vh 1.2vh;
++    border-radius: 0.6vh;
++    background: rgba(255, 255, 255, 0.14);
++    font-size: 1.5vh;
++    letter-spacing: 0.08em;
++    text-transform: uppercase;
++    color: rgba(255, 255, 255, 0.75);
++}
++
++.tt-audio-controls {
++    display: flex;
++    align-items: center;
++    justify-content: center;
++    margin-top: 4vh;
++}
++
++.tt-audio-btn {
++    display: flex;
++    align-items: center;
++    justify-content: center;
++    width: 10vh;
++    height: 10vh;
++    margin: 0 2.2vh;
++    padding: 0;
++    border: none;
++    border-radius: 50%;
++    background: transparent;
++    color: #fff;
++    cursor: pointer;
++    outline: none;
++}
++
++.tt-audio-icon {
++    width: 6vh;
++    height: 6vh;
++    fill: currentColor;
++}
++
++.tt-audio-icon text {
++    font-size: 13px;
++    font-weight: 700;
++    font-family: inherit;
++    fill: currentColor;
++}
++
++.tt-audio-btn-track .tt-audio-icon {
++    width: 4.6vh;
++    height: 4.6vh;
++}
++
++.tt-audio-btn {
++    transition: transform 0.15s ease, background-color 0.15s ease;
++}
++
++.tt-audio-btn-pressed {
++    transform: scale(0.88);
++    background-color: rgba(255, 255, 255, 0.22);
++}
++
++.tt-audio-btn-main {
++    width: 13vh;
++    height: 13vh;
++    background: rgba(255, 255, 255, 0.16);
++}
++
++.tt-audio-btn-main .tt-audio-icon {
++    width: 7vh;
++    height: 7vh;
++}
++
++.tt-audio-footer {
++    position: absolute;
++    left: 0;
++    right: 0;
++    bottom: 4.5vh;
++    display: flex;
++    align-items: center;
++    justify-content: center;
++}
++
++.tt-audio-hint {
++    font-size: 1.8vh;
++    color: rgba(255, 255, 255, 0.45);
++}
++
++.tt-audio-exit {
++    margin-left: 3vh;
++    padding: 1vh 2.4vh;
++    border: none;
++    border-radius: 999px;
++    background: rgba(255, 255, 255, 0.14);
++    color: rgba(255, 255, 255, 0.85);
++    font-family: inherit;
++    font-size: 1.8vh;
++    font-weight: 600;
++    cursor: pointer;
++    outline: none;
++}
++
++@keyframes tt-audio-blink {
++    50% { opacity: 0.25; }
++}
++
++@keyframes tt-audio-wave {
++    from { transform: scaleY(0.12); }
++    to { transform: scaleY(var(--h, 0.8)); }
++}
++
++@keyframes tt-audio-drift {
++    0% { transform: translate(-10%, -8%) scale(3.4) rotate(0deg); }
++    100% { transform: translate(10%, 8%) scale(3.9) rotate(8deg); }
++}
++
++@keyframes tt-audio-drift-2 {
++    0% { transform: translate(12%, 10%) scale(3.9) rotate(180deg); }
++    100% { transform: translate(-12%, -10%) scale(3.4) rotate(200deg); }
++}
++
++/* Portrait screens (phones): stack artwork above the details. */
++@media (max-aspect-ratio: 1/1) {
++    .tt-audio-content {
++        flex-direction: column;
++        text-align: center;
++        width: 88vw;
++    }
++
++    .tt-audio-art-wrap {
++        margin: 0 0 5vh;
++    }
++
++    .tt-audio-art {
++        width: 80vw;
++        height: 80vw;
++        border-radius: 3vw;
++    }
++
++    .tt-audio-info {
++        max-width: 88vw;
++        width: 100%;
++    }
++
++    .tt-audio-title { font-size: 3vh; }
++    .tt-audio-author { font-size: 2.2vh; }
++    .tt-audio-wave { height: 6vh; margin: 3vh 0 2.5vh; }
++    .tt-audio-wave span { width: 0.6vw; }
++    .tt-audio-btn { width: 9vh; height: 9vh; margin: 0 2vh; }
++    .tt-audio-btn-main { width: 11vh; height: 11vh; }
++    .tt-audio-hint { display: none; }
++    .tt-audio-clock { font-size: 7vh; margin-bottom: 2vh; }
++    .tt-audio-clock-icon { width: 4.5vh; height: 4.5vh; margin: -2.25vh 1.8vh 0 0; }
++}
+diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
+new file mode 100644
+index 0000000..e1f7486
+--- /dev/null
++++ b/mods/features/audioOnly.js
+@@ -0,0 +1,560 @@
++// Audio-only mode for TizenTube
++// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
++// Left/Right = seek 10s, Back = leave audio mode.
++
++import { t } from 'i18next';
++import css from './audioOnly.css';
++
++const SEEK_STEP = 10;
++// Channel up/down on the remote: Starboard key codes, Android's raw key codes,
++// plus PageUp/PageDown that some remotes send instead.
++const NEXT_KEYS = [427, 166, 33];
++const PREVIOUS_KEYS = [428, 167, 34];
++// Media keys YouTube TV already understands; we replay them to change track.
++const MEDIA_NEXT_KEY = 176;
++const MEDIA_PREVIOUS_KEY = 177;
++// "Previous" restarts the track when we are past this point, like Apple Music.
++const RESTART_THRESHOLD_S = 3;
++const BACK_KEYS = [8, 27, 461, 10009];
++const VIDEO_ID_RE = /^[\w-]{11}$/;
++// The player briefly reports no video while it reloads; only leave audio mode
++// after it has been gone for this many ticks (500 ms each).
++const MAX_MISSING_TICKS = 4;
++// The YouTube button can fire its command more than once per press.
++const TOGGLE_DEBOUNCE_MS = 600;
++
++window.isAudioOnly = false;
++
++let overlay = null;
++let els = {};
++let tickInterval = null;
++let lastVideoId = null;
++let missingTicks = 0;
++let lastToggleAt = 0;
++
++function log(...args) {
++    console.info('[AudioOnly]', ...args);
++}
++
++function getPlayer() {
++    return document.querySelector('.html5-video-player');
++}
++
++function getVideo() {
++    return document.querySelector('video');
++}
++
++function formatTime(seconds) {
++    if (!isFinite(seconds) || seconds < 0) seconds = 0;
++    seconds = Math.floor(seconds);
++    const h = Math.floor(seconds / 3600);
++    const m = Math.floor((seconds % 3600) / 60);
++    const s = seconds % 60;
++    const pad = (n) => (n < 10 ? '0' : '') + n;
++    return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
++}
++
++function el(tag, className, text) {
++    const node = document.createElement(tag);
++    if (className) node.className = className;
++    if (text) node.textContent = text;
++    return node;
++}
++
++// SVG built with DOM calls: YouTube TV enforces Trusted Types, so innerHTML is off limits.
++const SVG_NS = 'http://www.w3.org/2000/svg';
++function svgIcon(className, paths, label) {
++    const svg = document.createElementNS(SVG_NS, 'svg');
++    svg.setAttribute('viewBox', '0 0 48 48');
++    svg.setAttribute('class', className);
++    for (const d of paths) {
++        const path = document.createElementNS(SVG_NS, 'path');
++        path.setAttribute('d', d);
++        svg.appendChild(path);
++    }
++    if (label) {
++        const text = document.createElementNS(SVG_NS, 'text');
++        text.setAttribute('x', '24');
++        text.setAttribute('y', '30');
++        text.setAttribute('text-anchor', 'middle');
++        text.textContent = label;
++        svg.appendChild(text);
++    }
++    return svg;
++}
++
++const ICONS = {
++    play: ['M15 9.5v29c0 1.6 1.7 2.5 3 1.7l23-14.5c1.3-.8 1.3-2.6 0-3.4L18 7.8c-1.3-.8-3 .1-3 1.7z'],
++    pause: ['M12 8h7.5v32H12z', 'M28.5 8H36v32h-7.5z'],
++    back: ['M24 6a18 18 0 1 1-17.6 21.8 1.8 1.8 0 0 1 3.5-.8A14.4 14.4 0 1 0 24 9.6v3.9c0 .9-1 1.4-1.7.9l-6.6-5a1.1 1.1 0 0 1 0-1.8l6.6-5c.7-.5 1.7 0 1.7.9z'],
++    clock: ['M24 4a20 20 0 1 0 0 40 20 20 0 0 0 0-40zm0 3.6a16.4 16.4 0 1 1 0 32.8 16.4 16.4 0 0 1 0-32.8z', 'M22.2 12h3.6v11.3l7.6 4.4-1.8 3.1-9.4-5.4z'],
++    previous: ['M8 9h4.5v30H8z', 'M41 10.6v26.8c0 1.5-1.6 2.4-2.9 1.6L16.4 25.6c-1.2-.8-1.2-2.5 0-3.3L38.1 9c1.3-.8 2.9.1 2.9 1.6z'],
++    next: ['M35.5 9H40v30h-4.5z', 'M7 10.6v26.8c0 1.5 1.6 2.4 2.9 1.6l21.7-13.4c1.2-.8 1.2-2.5 0-3.3L9.9 9C8.6 8.2 7 9.1 7 10.6z'],
++    forward: ['M24 6a18 18 0 1 0 17.6 21.8 1.8 1.8 0 0 0-3.5-.8A14.4 14.4 0 1 1 24 9.6v3.9c0 .9 1 1.4 1.7.9l6.6-5a1.1 1.1 0 0 0 0-1.8l-6.6-5c-.7-.5-1.7 0-1.7.9z'],
++};
++
++const WAVE_BARS = 48;
++
++function buildOverlay() {
++    // YouTube's CSP only allows nonce'd styles, so append to an existing one
++    // (same approach as ui/ui.js).
++    const existingStyle = document.querySelector('style[nonce]');
++    if (existingStyle) {
++        existingStyle.textContent += css;
++    } else {
++        const style = el('style');
++        style.textContent = css;
++        document.head.appendChild(style);
++    }
++
++    overlay = el('div', 'tt-audio');
++    overlay.style.display = 'none';
++
++    // Two drifting copies of the blurred artwork, like Apple Music's animated background.
++    els.backdrop = el('div', 'tt-audio-backdrop');
++    els.backdrop2 = el('div', 'tt-audio-backdrop tt-audio-backdrop-2');
++    overlay.appendChild(els.backdrop);
++    overlay.appendChild(els.backdrop2);
++    overlay.appendChild(el('div', 'tt-audio-shade'));
++
++    const content = el('div', 'tt-audio-content');
++
++    const artWrap = el('div', 'tt-audio-art-wrap');
++
++    // Large digital clock above the artwork.
++    // The icon hangs off the left of the time so the digits stay centred.
++    const clock = el('div', 'tt-audio-clock');
++    const time = el('span', 'tt-audio-clock-time');
++    time.appendChild(svgIcon('tt-audio-clock-icon', ICONS.clock));
++    els.clockHours = el('span');
++    els.clockMinutes = el('span');
++    time.appendChild(els.clockHours);
++    time.appendChild(el('span', 'tt-audio-clock-colon', ':'));
++    time.appendChild(els.clockMinutes);
++    clock.appendChild(time);
++    artWrap.appendChild(clock);
++
++    els.art = el('div', 'tt-audio-art');
++    artWrap.appendChild(els.art);
++    content.appendChild(artWrap);
++
++    const info = el('div', 'tt-audio-info');
++    els.title = el('div', 'tt-audio-title');
++    els.author = el('div', 'tt-audio-author');
++    info.appendChild(els.title);
++    info.appendChild(els.author);
++
++    // Sound animation: bars with their own speed and height, taller in the middle.
++    els.wave = el('div', 'tt-audio-wave');
++    for (let i = 0; i < WAVE_BARS; i++) {
++        const bar = el('span');
++        const envelope = Math.sin(Math.PI * (i + 0.5) / WAVE_BARS);
++        bar.style.setProperty('--h', (0.25 + 0.75 * envelope * (0.55 + 0.45 * Math.random())).toFixed(2));
++        bar.style.animationDuration = (0.55 + Math.random() * 0.7).toFixed(2) + 's';
++        bar.style.animationDelay = (-Math.random() * 1.2).toFixed(2) + 's';
++        els.wave.appendChild(bar);
++    }
++    info.appendChild(els.wave);
++
++    const progress = el('div', 'tt-audio-progress');
++    els.bar = el('div', 'tt-audio-bar');
++    els.fill = el('div', 'tt-audio-fill');
++    els.bar.appendChild(els.fill);
++    progress.appendChild(els.bar);
++    const times = el('div', 'tt-audio-times');
++    els.current = el('span');
++    els.badge = el('span', 'tt-audio-badge', t('player.audioOnly.badge'));
++    els.duration = el('span');
++    times.appendChild(els.current);
++    times.appendChild(els.badge);
++    times.appendChild(els.duration);
++    progress.appendChild(times);
++    info.appendChild(progress);
++
++    const controls = el('div', 'tt-audio-controls');
++    els.rewind = el('button', 'tt-audio-btn');
++    els.rewind.appendChild(svgIcon('tt-audio-icon', ICONS.back, String(SEEK_STEP)));
++    els.play = el('button', 'tt-audio-btn tt-audio-btn-main');
++    els.playIcon = svgIcon('tt-audio-icon', ICONS.pause);
++    els.play.appendChild(els.playIcon);
++    els.forward = el('button', 'tt-audio-btn');
++    els.forward.appendChild(svgIcon('tt-audio-icon', ICONS.forward, String(SEEK_STEP)));
++    els.rewind.addEventListener('click', () => seek(-SEEK_STEP));
++    els.play.addEventListener('click', togglePlay);
++    els.forward.addEventListener('click', () => seek(SEEK_STEP));
++    els.bar.addEventListener('click', (evt) => {
++        const video = getVideo();
++        const rect = els.bar.getBoundingClientRect();
++        if (!video || !rect.width || !isFinite(video.duration)) return;
++        video.currentTime = ((evt.clientX - rect.left) / rect.width) * video.duration;
++    });
++    els.previous = el('button', 'tt-audio-btn tt-audio-btn-track');
++    els.previous.appendChild(svgIcon('tt-audio-icon', ICONS.previous));
++    els.next = el('button', 'tt-audio-btn tt-audio-btn-track');
++    els.next.appendChild(svgIcon('tt-audio-icon', ICONS.next));
++    els.previous.addEventListener('click', previousTrack);
++    els.next.addEventListener('click', nextTrack);
++    controls.appendChild(els.previous);
++    controls.appendChild(els.rewind);
++    controls.appendChild(els.play);
++    controls.appendChild(els.forward);
++    controls.appendChild(els.next);
++    info.appendChild(controls);
++
++    content.appendChild(info);
++    overlay.appendChild(content);
++
++    const footer = el('div', 'tt-audio-footer');
++    footer.appendChild(el('span', 'tt-audio-hint', t('player.audioOnly.hint')));
++    els.exit = el('button', 'tt-audio-exit', t('player.audioOnly.exit'));
++    els.exit.addEventListener('click', () => disableAudioOnly('exit button'));
++    footer.appendChild(els.exit);
++    overlay.appendChild(footer);
++
++    document.body.appendChild(overlay);
++}
++
++function updateClock() {
++    const now = new Date();
++    const pad = (n) => (n < 10 ? '0' : '') + n;
++    els.clockHours.textContent = pad(now.getHours());
++    els.clockMinutes.textContent = pad(now.getMinutes());
++}
++
++function setPlayIcon(paused) {
++    const paths = paused ? ICONS.play : ICONS.pause;
++    while (els.playIcon.firstChild) els.playIcon.removeChild(els.playIcon.firstChild);
++    for (const d of paths) {
++        const path = document.createElementNS(SVG_NS, 'path');
++        path.setAttribute('d', d);
++        els.playIcon.appendChild(path);
++    }
++}
++
++// Prefer the HD thumbnail (16:9, no letterbox); not every video has one.
++function setArtwork(videoId) {
++    const hq = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
++    const hd = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
++    const apply = (url, letterboxed) => {
++        els.art.style.backgroundImage = `url("${url}")`;
++        els.art.classList.toggle('tt-audio-art-letterboxed', letterboxed);
++        els.backdrop.style.backgroundImage = `url("${url}")`;
++        els.backdrop2.style.backgroundImage = `url("${url}")`;
++    };
++    apply(hq, true);
++    const probe = new Image();
++    probe.onload = () => {
++        // YouTube answers missing HD thumbnails with a 120x90 placeholder.
++        if (probe.naturalWidth > 120 && lastVideoId === videoId) apply(hd, false);
++    };
++    probe.src = hd;
++}
++
++// On TV, getVideoData() often has no title/author, so remember the ones seen
++// in player responses (TizenTube already parses them through JSON.parse).
++const videoDetailsById = {};
++const origParse = JSON.parse;
++JSON.parse = function () {
++    const r = origParse.apply(this, arguments);
++    try {
++        const details = r && r.videoDetails;
++        if (details && details.videoId) {
++            videoDetailsById[details.videoId] = { title: details.title, author: details.author };
++        }
++    } catch (e) { }
++    return r;
++};
++
++function getTitleAndAuthor(player, data) {
++    let title = data.title;
++    let author = data.author;
++    if ((!title || !author) && player.getPlayerResponse) {
++        try {
++            const details = player.getPlayerResponse().videoDetails || {};
++            title = title || details.title;
++            author = author || details.author;
++        } catch (e) { }
++    }
++    // YouTube TV publishes the "now playing" info here (it is what Android
++    // shows for the media session), and it is the most reliable source on TV.
++    const metadata = navigator.mediaSession && navigator.mediaSession.metadata;
++    if (metadata) {
++        title = title || metadata.title;
++        author = author || metadata.artist;
++    }
++    const cached = videoDetailsById[data.video_id];
++    if (cached) {
++        title = title || cached.title;
++        author = author || cached.author;
++    }
++    return { title: title || '', author: author || '' };
++}
++
++function updateMetadata() {
++    const player = getPlayer();
++    const data = player && player.getVideoData ? player.getVideoData() : null;
++    if (!data) return;
++
++    const videoId = data.video_id;
++    const isNewVideo = videoId !== lastVideoId;
++
++    // Text can arrive after the video starts, so keep filling it while empty.
++    if (isNewVideo || !els.title.textContent || !els.author.textContent) {
++        const info = getTitleAndAuthor(player, data);
++        els.title.textContent = info.title;
++        els.author.textContent = info.author;
++    }
++
++    if (!isNewVideo) return;
++    lastVideoId = videoId;
++
++    if (videoId && VIDEO_ID_RE.test(videoId)) {
++        setArtwork(videoId);
++    } else {
++        els.art.style.removeProperty('background-image');
++        els.backdrop.style.removeProperty('background-image');
++        els.backdrop2.style.removeProperty('background-image');
++    }
++}
++
++function updateProgress() {
++    const video = getVideo();
++    if (!video) return;
++    const duration = video.duration;
++    const current = video.currentTime;
++    const ratio = isFinite(duration) && duration > 0 ? Math.min(current / duration, 1) : 0;
++
++    els.fill.style.width = `${ratio * 100}%`;
++    els.current.textContent = formatTime(current);
++    // Remaining time, as Apple Music shows it.
++    els.duration.textContent = isFinite(duration) ? '-' + formatTime(duration - current) : t('player.audioOnly.live');
++    if (overlay.classList.contains('tt-audio-paused') !== video.paused || !els.playIcon.firstChild) {
++        setPlayIcon(video.paused);
++    }
++    overlay.classList.toggle('tt-audio-paused', video.paused);
++}
++
++function tick() {
++    // Leave audio mode on its own when the player is closed.
++    const player = getPlayer();
++    const data = player && player.getVideoData ? player.getVideoData() : null;
++    if (!getVideo() || !data || !data.video_id) {
++        if (++missingTicks >= MAX_MISSING_TICKS) disableAudioOnly('player closed');
++        return;
++    }
++    missingTicks = 0;
++    updateClock();
++    updateMetadata();
++    updateProgress();
++}
++
++function togglePlay() {
++    const video = getVideo();
++    if (!video) return;
++    if (video.paused) video.play();
++    else video.pause();
++    updateProgress();
++}
++
++function seek(delta) {
++    const video = getVideo();
++    if (!video) return;
++    const max = isFinite(video.duration) ? video.duration : Infinity;
++    video.currentTime = Math.max(0, Math.min(video.currentTime + delta, max));
++    updateProgress();
++}
++
++// Our player bar button is drawn by YouTube TV but never receives real focus
++// nor fires its command: when it is "selected", the DOM focus falls back to the
++// watch page. So detect it ourselves: a Left/Right move from a real transport
++// button that lands on a non-button, while our label is shown on screen.
++const HOLE_FOCUS_MAX_AGE_MS = 8000;
++let holeFocusAt = 0;
++
++function isTransportButton(el) {
++    return !!(el && el.tagName && el.tagName.toLowerCase() === 'yt-button-container' && el.getAttribute('aria-label'));
++}
++
++function isLabelVisible(label) {
++    const nodes = document.body.getElementsByTagName('*');
++    for (let i = 0; i < nodes.length; i++) {
++        const node = nodes[i];
++        if (node.childElementCount === 0 && node.offsetParent !== null && node.textContent.trim() === label &&
++            !(overlay && overlay.contains(node))) {
++            return true;
++        }
++    }
++    return false;
++}
++
++function trackFocus(evt) {
++    if (evt.type !== 'keydown' || window.isAudioOnly) return;
++    if (evt.keyCode === 37 || evt.keyCode === 39) {
++        const wasOnButton = isTransportButton(document.activeElement);
++        holeFocusAt = 0;
++        if (wasOnButton) {
++            setTimeout(() => {
++                holeFocusAt = isTransportButton(document.activeElement) ? 0 : Date.now();
++            }, 50);
++        }
++    } else if (evt.keyCode !== 13) {
++        holeFocusAt = 0;
++    }
++}
++
++function isAudioButtonFocused() {
++    if (!holeFocusAt || Date.now() - holeFocusAt > HOLE_FOCUS_MAX_AGE_MS) return false;
++    if (isTransportButton(document.activeElement)) return false;
++    return isLabelVisible(t('player.audioOnly.button'));
++}
++
++function currentVideoId() {
++    const player = getPlayer();
++    const data = player && player.getVideoData ? player.getVideoData() : null;
++    return data ? data.video_id : null;
++}
++
++function sendMediaKey(keyCode) {
++    for (const type of ['keydown', 'keyup']) {
++        const evt = document.createEvent('Event');
++        evt.initEvent(type, true, true);
++        evt.keyCode = keyCode;
++        evt.which = keyCode;
++        document.dispatchEvent(evt);
++    }
++}
++
++// Replays the media key YouTube TV handles natively; if the track has not
++// changed shortly after, falls back to the player API.
++function changeTrack(keyCode, apiName) {
++    const before = currentVideoId();
++    flashButton(keyCode === MEDIA_NEXT_KEY ? els.next : els.previous);
++    sendMediaKey(keyCode);
++    setTimeout(() => {
++        if (!window.isAudioOnly || currentVideoId() !== before) return;
++        const player = getPlayer();
++        if (player && typeof player[apiName] === 'function') {
++            log('media key had no effect, using', apiName);
++            try {
++                player[apiName]();
++            } catch (e) {
++                log(apiName, 'failed', e);
++            }
++        }
++    }, 1500);
++}
++
++function nextTrack() {
++    changeTrack(MEDIA_NEXT_KEY, 'nextVideo');
++}
++
++function previousTrack() {
++    const video = getVideo();
++    if (video && video.currentTime > RESTART_THRESHOLD_S) {
++        flashButton(els.previous);
++        video.currentTime = 0;
++        updateProgress();
++        return;
++    }
++    changeTrack(MEDIA_PREVIOUS_KEY, 'previousVideo');
++}
++
++function flashButton(button) {
++    if (!button) return;
++    button.classList.add('tt-audio-btn-pressed');
++    setTimeout(() => button.classList.remove('tt-audio-btn-pressed'), 200);
++}
++
++function keyHandler(evt) {
++    if (!window.isAudioOnly) {
++        if (evt.keyCode === 13 && isAudioButtonFocused()) {
++            if (evt.type === 'keydown') toggleAudioOnly();
++            evt.preventDefault();
++            evt.stopPropagation();
++            return false;
++        }
++        return true;
++    }
++
++    let handled = true;
++    if (evt.keyCode === 13 || evt.keyCode === 32) {
++        if (evt.type === 'keydown') togglePlay();
++    } else if (evt.keyCode === 37) {
++        if (evt.type === 'keydown') seek(-SEEK_STEP);
++    } else if (evt.keyCode === 39) {
++        if (evt.type === 'keydown') seek(SEEK_STEP);
++    } else if (BACK_KEYS.indexOf(evt.keyCode) !== -1) {
++        if (evt.type === 'keydown') disableAudioOnly('back key ' + evt.keyCode);
++    } else if (NEXT_KEYS.indexOf(evt.keyCode) !== -1) {
++        if (evt.type === 'keydown') nextTrack();
++    } else if (PREVIOUS_KEYS.indexOf(evt.keyCode) !== -1) {
++        if (evt.type === 'keydown') previousTrack();
++    } else if (evt.keyCode === 38 || evt.keyCode === 40) {
++        // Swallow so the hidden YouTube UI underneath doesn't move.
++    } else {
++        // Media keys (play/pause, next, previous...) go to YouTube as usual.
++        handled = false;
++    }
++
++    if (handled) {
++        evt.preventDefault();
++        evt.stopPropagation();
++        return false;
++    }
++    return true;
++}
++
++function enableAudioOnly() {
++    if (window.isAudioOnly) return;
++    if (!getVideo()) {
++        log('no <video> element, not enabling');
++        return;
++    }
++    if (!overlay) buildOverlay();
++
++    // Close the player's settings popup / controls if open. Must happen before
++    // isAudioOnly is set, otherwise keyHandler treats it as "leave audio mode".
++    const kE = document.createEvent('Event');
++    kE.initEvent('keydown', true, true);
++    kE.keyCode = 27;
++    kE.which = 27;
++    document.dispatchEvent(kE);
++
++    window.isAudioOnly = true;
++    lastVideoId = null;
++    missingTicks = 0;
++    overlay.style.display = 'flex';
++    log('enabled');
++    tick();
++    tickInterval = setInterval(tick, 500);
++}
++
++function disableAudioOnly(reason) {
++    if (!window.isAudioOnly) return;
++    log('disabled:', reason || 'toggle');
++    window.isAudioOnly = false;
++    clearInterval(tickInterval);
++    tickInterval = null;
++    overlay.style.display = 'none';
++}
++
++function toggleAudioOnly() {
++    log('toggle requested, currently', window.isAudioOnly ? 'on' : 'off');
++    const now = Date.now();
++    if (now - lastToggleAt < TOGGLE_DEBOUNCE_MS) {
++        log('toggle ignored (debounce)');
++        return;
++    }
++    lastToggleAt = now;
++    if (window.isAudioOnly) disableAudioOnly('toggle');
++    else enableAudioOnly();
++}
++
++log('loaded');
++
++window.addEventListener('keydown', trackFocus, true);
++window.addEventListener('keydown', keyHandler, true);
++window.addEventListener('keypress', keyHandler, true);
++window.addEventListener('keyup', keyHandler, true);
++
++export { enableAudioOnly, disableAudioOnly, toggleAudioOnly };
+diff --git a/mods/resolveCommand.js b/mods/resolveCommand.js
+index 3d2d10d..d9b7216 100644
+--- a/mods/resolveCommand.js
++++ b/mods/resolveCommand.js
+@@ -1,5 +1,6 @@
+ import { configWrite, configRead } from './config.js';
+ import { enablePip } from './features/pictureInPicture.js';
++import { toggleAudioOnly } from './features/audioOnly.js';
+ import modernUI, { optionShow } from './ui/settings.js';
+ import { speedSettings } from './ui/speedUI.js';
+ import { showToast, buttonItem, showModal, QrCodeRenderer, overlayPanelItemListRenderer, overlayMessageRenderer } from './ui/ytUI.js';
+@@ -98,6 +99,18 @@ export function patchResolveCommand() {
+                     }
+ 
+                     cmd.openPopupAction.popup.overlaySectionRenderer.overlay.overlayTwoPanelRenderer.actionPanel.overlayPanelRenderer.content.overlayPanelItemListRenderer.items.splice(2, 0,
++                        buttonItem(
++                            { title: t('player.audioOnly.button') },
++                            { icon: 'YOUTUBE_MUSIC' }, [
++                            {
++                                customAction: {
++                                    action: 'TOGGLE_AUDIO_ONLY'
++                                }
++                            }
++                        ])
++                    );
++
++                    cmd.openPopupAction.popup.overlaySectionRenderer.overlay.overlayTwoPanelRenderer.actionPanel.overlayPanelRenderer.content.overlayPanelItemListRenderer.items.splice(3, 0,
+                         buttonItem(
+                             { title: t('player.miniPlayer') },
+                             { icon: 'CLEAR_COOKIES' }, [
+@@ -109,7 +122,7 @@ export function patchResolveCommand() {
+                         ])
+                     );
+ 
+-                    cmd.openPopupAction.popup.overlaySectionRenderer.overlay.overlayTwoPanelRenderer.actionPanel.overlayPanelRenderer.content.overlayPanelItemListRenderer.items.splice(3, 0,
++                    cmd.openPopupAction.popup.overlaySectionRenderer.overlay.overlayTwoPanelRenderer.actionPanel.overlayPanelRenderer.content.overlayPanelItemListRenderer.items.splice(4, 0,
+                         buttonItem(
+                             { title: t('player.share.button') },
+                             { icon: 'OPEN_IN_NEW' }, [
+@@ -121,7 +134,7 @@ export function patchResolveCommand() {
+                         ])
+                     );
+ 
+-                    cmd.openPopupAction.popup.overlaySectionRenderer.overlay.overlayTwoPanelRenderer.actionPanel.overlayPanelRenderer.content.overlayPanelItemListRenderer.items.splice(3, 0,
++                    cmd.openPopupAction.popup.overlaySectionRenderer.overlay.overlayTwoPanelRenderer.actionPanel.overlayPanelRenderer.content.overlayPanelItemListRenderer.items.splice(4, 0,
+                         buttonItem(
+                             { title: t('player.screenOff') },
+                             { icon: 'EYE_OFF' }, [
+@@ -135,7 +148,7 @@ export function patchResolveCommand() {
+ 
+                     if (window.h5vcc && window.h5vcc.tizentube && window.h5vcc.tizentube.HasSystemFeature &&
+                         window.h5vcc.tizentube.HasSystemFeature('android.software.picture_in_picture')) {
+-                        cmd.openPopupAction.popup.overlaySectionRenderer.overlay.overlayTwoPanelRenderer.actionPanel.overlayPanelRenderer.content.overlayPanelItemListRenderer.items.splice(3, 0,
++                        cmd.openPopupAction.popup.overlaySectionRenderer.overlay.overlayTwoPanelRenderer.actionPanel.overlayPanelRenderer.content.overlayPanelItemListRenderer.items.splice(4, 0,
+                             buttonItem(
+                                 { title: t('player.pictureInPicture') },
+                                 { icon: 'TV' }, [
+@@ -232,6 +245,9 @@ function customAction(action, parameters) {
+         case 'ENTER_MP':
+             enablePip();
+             break;
++        case 'TOGGLE_AUDIO_ONLY':
++            toggleAudioOnly();
++            break;
+         case 'ENTER_PIP':
+             window.h5vcc.tizentube.EnterPIP();
+             break;
+diff --git a/mods/translations/resources/en.json b/mods/translations/resources/en.json
+index 741901a..761fac5 100644
+--- a/mods/translations/resources/en.json
++++ b/mods/translations/resources/en.json
+@@ -294,6 +294,13 @@
+             "button": "Share",
+             "qrCodeScanMessage": "Scan the QR code below to share this video."
+         },
++        "audioOnly": {
++            "button": "Audio only",
++            "badge": "Audio mode",
++            "exit": "Show video",
++            "live": "Live",
++            "hint": "OK: play/pause  ·  ◀ ▶: 10 s  ·  CH +/−: next/previous  ·  Back: show video"
++        },
+         "screenOff": "Turn off screen",
+         "chapters": {
+             "title": "Chapters",
+diff --git a/mods/translations/resources/fr.json b/mods/translations/resources/fr.json
+index dc83f29..91dbe99 100644
+--- a/mods/translations/resources/fr.json
++++ b/mods/translations/resources/fr.json
+@@ -294,6 +294,13 @@
+             "button": "Partager",
+             "qrCodeScanMessage": "Scannez le code QR ci-dessous pour partager cette vidéo."
+         },
++        "audioOnly": {
++            "button": "Audio seulement",
++            "badge": "Mode audio",
++            "exit": "Afficher la vidéo",
++            "live": "En direct",
++            "hint": "OK : lecture/pause  ·  ◀ ▶ : 10 s  ·  CH +/− : suivant/précédent  ·  Retour : afficher la vidéo"
++        },
+         "screenOff": "Éteindre l'écran",
+         "chapters": {
+             "title": "Chapitres",
+diff --git a/mods/userScript.js b/mods/userScript.js
+index f8a9c6e..b2603e7 100644
+--- a/mods/userScript.js
++++ b/mods/userScript.js
+@@ -19,6 +19,7 @@ import "./features/moreSubtitles.js";
+ import "./features/captionStylePersistence.js";
+ import "./features/updater.js";
+ import "./features/pictureInPicture.js";
++import "./features/audioOnly.js";
+ import "./features/preferredVideoQuality.js";
+ import "./features/videoQueuing.js";
+ import "./features/enableFeatures.js";
