@@ -797,10 +797,10 @@ index 0000000..1c7f306
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..adff782
+index 0000000..b78f87c
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,564 @@
+@@ -0,0 +1,566 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode.
@@ -1104,6 +1104,8 @@ index 0000000..adff782
 +
 +    if (videoId && VIDEO_ID_RE.test(videoId)) {
 +        setArtwork(videoId);
++        // Small thumbnail: enough to find the colour, quick to load.
++        els.spectrum.setColorFromImage(`https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`);
 +    } else {
 +        els.art.style.removeProperty('background-image');
 +        els.backdrop.style.removeProperty('background-image');
@@ -1367,13 +1369,14 @@ index 0000000..adff782
 +export { enableAudioOnly, disableAudioOnly, toggleAudioOnly };
 diff --git a/mods/features/audioSpectrum.js b/mods/features/audioSpectrum.js
 new file mode 100644
-index 0000000..e72815d
+index 0000000..e237686
 --- /dev/null
 +++ b/mods/features/audioSpectrum.js
-@@ -0,0 +1,134 @@
+@@ -0,0 +1,212 @@
 +// Winamp-style LED spectrum analyser for the audio-only screen: columns of
-+// green LED segments on a dark dot matrix, white peak caps that hold then
-+// fall, and a blue dotted baseline.
++// LED segments on a dark dot matrix, white peak caps that hold then fall, and
++// a blue dotted baseline. The segments take the artwork's dominant colour
++// (green until one is found).
 +// The page cannot read the video's audio (doing so could cut the sound on
 +// TV), so the bands follow a lively simulated signal: a beat pulse, a bass-
 +// heavy envelope and per-band noise, with fast attack and slow release.
@@ -1395,6 +1398,58 @@ index 0000000..e72815d
 +    base: 'rgba(80, 150, 255, 0.85)',
 +};
 +
++// HSL (0-360, 0-1, 0-1) -> [r, g, b] (0-255).
++function hslToRgb(h, s, l) {
++    const k = (n) => (n + h / 30) % 12;
++    const a = s * Math.min(l, 1 - l);
++    const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
++    return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
++}
++
++function rgbToHsv(r, g, b) {
++    const max = Math.max(r, g, b);
++    const min = Math.min(r, g, b);
++    const d = max - min;
++    let h = 0;
++    if (d) {
++        if (max === r) h = ((g - b) / d) % 6;
++        else if (max === g) h = (b - r) / d + 2;
++        else h = (r - g) / d + 4;
++        h = (h * 60 + 360) % 360;
++    }
++    return [h, max ? d / max : 0, max / 255];
++}
++
++// Dominant vivid hue of an image: pixels are grouped in 12 hue buckets,
++// weighted by saturation x brightness, and the strongest bucket wins.
++// Returns a hue (0-360), or null for a grey / unreadable image.
++function dominantHue(img) {
++    const W = 24;
++    const H = 18;
++    const canvas = document.createElement('canvas');
++    canvas.width = W;
++    canvas.height = H;
++    const c = canvas.getContext('2d');
++    // Skip the letterbox bars at the top and bottom of YouTube thumbnails.
++    const crop = img.naturalHeight * 0.125;
++    c.drawImage(img, 0, crop, img.naturalWidth, img.naturalHeight - crop * 2, 0, 0, W, H);
++    const data = c.getImageData(0, 0, W, H).data;
++    const weight = new Array(12).fill(0);
++    const hueSum = new Array(12).fill(0);
++    for (let i = 0; i < data.length; i += 4) {
++        const [h, sat, val] = rgbToHsv(data[i], data[i + 1], data[i + 2]);
++        const w = sat * sat * val;
++        if (w < 0.04) continue;
++        const bucket = Math.floor(h / 30) % 12;
++        weight[bucket] += w;
++        hueSum[bucket] += h * w;
++    }
++    let best = -1;
++    for (let b = 0; b < 12; b++) if (best < 0 || weight[b] > weight[best]) best = b;
++    if (best < 0 || weight[best] < 1) return null;
++    return hueSum[best] / weight[best];
++}
++
 +function mix(a, b, t) {
 +    return `rgb(${Math.round(a[0] + (b[0] - a[0]) * t)}, ${Math.round(a[1] + (b[1] - a[1]) * t)}, ${Math.round(a[2] + (b[2] - a[2]) * t)})`;
 +}
@@ -1408,7 +1463,12 @@ index 0000000..e72815d
 +    const peaks = new Array(BANDS).fill(0);
 +    const peakHeldAt = new Array(BANDS).fill(0);
 +    const phases = Array.from({ length: BANDS }, () => Math.random() * Math.PI * 2);
-+    const rowColors = Array.from({ length: ROWS }, (_, r) => mix(COLORS.low, COLORS.high, r / (ROWS - 1)));
++    let rowColors = [];
++    function setGradient(low, high) {
++        rowColors = Array.from({ length: ROWS }, (_, r) => mix(low, high, r / (ROWS - 1)));
++    }
++    setGradient(COLORS.low, COLORS.high);
++    let colorRequest = 0;
 +
 +    let timer = null;
 +    let paused = false;
@@ -1502,6 +1562,26 @@ index 0000000..e72815d
 +        },
 +        setPaused(value) {
 +            paused = value;
++        },
++        // Take the LED colour from an image that sends CORS headers.
++        setColorFromImage(url) {
++            const request = ++colorRequest;
++            const img = new Image();
++            img.crossOrigin = 'anonymous';
++            img.onload = () => {
++                if (request !== colorRequest) return;
++                let hue = null;
++                try {
++                    hue = dominantHue(img);
++                } catch (e) { }
++                if (hue === null) {
++                    setGradient(COLORS.low, COLORS.high);
++                } else {
++                    // Deep at the bottom, bright at the top, like the green original.
++                    setGradient(hslToRgb(hue, 0.72, 0.42), hslToRgb(hue, 0.85, 0.66));
++                }
++            };
++            img.src = url;
 +        },
 +    };
 +}
