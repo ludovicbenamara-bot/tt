@@ -289,7 +289,7 @@ index 0000000..fb236f6
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..1c7f306
+index 0000000..e8efd23
 --- /dev/null
 +++ b/mods/features/audioOnly.css
 @@ -0,0 +1,502 @@
@@ -539,8 +539,8 @@ index 0000000..1c7f306
 +.tt-audio-spectrum {
 +    display: block;
 +    width: 100%;
-+    height: 12vh;
-+    margin: 3vh 0 2.5vh;
++    height: 18vh;
++    margin: 2.5vh 0 2vh;
 +}
 +
 +.tt-audio-bar {
@@ -585,16 +585,16 @@ index 0000000..1c7f306
 +    display: flex;
 +    align-items: center;
 +    justify-content: center;
-+    margin-top: 4vh;
++    margin-top: 2.5vh;
 +}
 +
 +.tt-audio-btn {
 +    display: flex;
 +    align-items: center;
 +    justify-content: center;
-+    width: 10vh;
-+    height: 10vh;
-+    margin: 0 2.2vh;
++    width: 7.5vh;
++    height: 7.5vh;
++    margin: 0 2vh;
 +    padding: 0;
 +    border: none;
 +    border-radius: 50%;
@@ -605,8 +605,8 @@ index 0000000..1c7f306
 +}
 +
 +.tt-audio-icon {
-+    width: 6vh;
-+    height: 6vh;
++    width: 4.5vh;
++    height: 4.5vh;
 +    fill: currentColor;
 +}
 +
@@ -618,8 +618,8 @@ index 0000000..1c7f306
 +}
 +
 +.tt-audio-btn-track .tt-audio-icon {
-+    width: 4.6vh;
-+    height: 4.6vh;
++    width: 3.4vh;
++    height: 3.4vh;
 +}
 +
 +.tt-audio-btn {
@@ -632,14 +632,14 @@ index 0000000..1c7f306
 +}
 +
 +.tt-audio-btn-main {
-+    width: 13vh;
-+    height: 13vh;
++    width: 9.5vh;
++    height: 9.5vh;
 +    background: rgba(255, 255, 255, 0.16);
 +}
 +
 +.tt-audio-btn-main .tt-audio-icon {
-+    width: 7vh;
-+    height: 7vh;
++    width: 5vh;
++    height: 5vh;
 +}
 +
 +.tt-audio-footer {
