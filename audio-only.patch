@@ -29,10 +29,10 @@ index 0cb2223..e0c9cc7 100644
          const category = window.sponsorblock.segments.find(seg => seg.category === 'poi_highlight');
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..abbeecf
+index 0000000..937bb74
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,352 @@
+@@ -0,0 +1,413 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -155,6 +155,64 @@ index 0000000..abbeecf
 +    flex: 1 1 auto;
 +    min-width: 0;
 +    max-width: 52vw;
++}
++
++/* 5-day weather row above the title. */
++.tt-audio-weather {
++    display: flex;
++    align-items: flex-end;
++    margin-bottom: 3.5vh;
++}
++
++.tt-audio-weather-day {
++    display: flex;
++    flex-direction: column;
++    align-items: center;
++    width: 9vh;
++    margin-right: 1.8vh;
++    padding: 1.2vh 0 1vh;
++    border-radius: 1.6vh;
++    background: rgba(255, 255, 255, 0.08);
++}
++
++.tt-audio-weather-day:first-child {
++    background: rgba(255, 255, 255, 0.16);
++}
++
++.tt-audio-weather-label {
++    font-size: 1.8vh;
++    font-weight: 600;
++    color: rgba(255, 255, 255, 0.75);
++}
++
++.tt-audio-weather-icon {
++    width: 6.4vh;
++    height: 6.4vh;
++    margin: 0.6vh 0;
++    filter: drop-shadow(0 0.4vh 0.8vh rgba(0, 0, 0, 0.25));
++}
++
++.tt-audio-weather-temps {
++    font-size: 1.9vh;
++    font-weight: 700;
++    font-variant-numeric: tabular-nums;
++}
++
++.tt-audio-weather-min {
++    margin-left: 0.6vh;
++    font-weight: 500;
++    color: rgba(255, 255, 255, 0.55);
++}
++
++.tt-audio-weather-city {
++    align-self: center;
++    margin-left: 1vh;
++    font-size: 2vh;
++    font-weight: 600;
++    color: rgba(255, 255, 255, 0.6);
++    white-space: nowrap;
++    overflow: hidden;
++    text-overflow: ellipsis;
 +}
 +
 +.tt-audio-title {
@@ -382,21 +440,25 @@ index 0000000..abbeecf
 +    .tt-audio-btn { width: 9vh; height: 9vh; margin: 0 2vh; }
 +    .tt-audio-btn-main { width: 11vh; height: 11vh; }
 +    .tt-audio-hint { display: none; }
++    .tt-audio-weather { justify-content: center; flex-wrap: wrap; margin-bottom: 2.5vh; }
++    .tt-audio-weather-day { width: 14vw; margin: 0 1vw; }
++    .tt-audio-weather-city { width: 100%; margin: 1vh 0 0; text-align: center; }
 +    .tt-audio-clock { font-size: 7vh; margin-bottom: 2vh; }
 +    .tt-audio-clock-icon { width: 4.5vh; height: 4.5vh; margin: -2.25vh 1.8vh 0 0; }
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..e1f7486
+index 0000000..b2f6ef9
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,560 @@
+@@ -0,0 +1,565 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode.
 +
 +import { t } from 'i18next';
 +import css from './audioOnly.css';
++import { createWeather } from './audioWeather.js';
 +
 +const SEEK_STEP = 10;
 +// Channel up/down on the remote: Starboard key codes, Android's raw key codes,
@@ -532,6 +594,9 @@ index 0000000..e1f7486
 +    content.appendChild(artWrap);
 +
 +    const info = el('div', 'tt-audio-info');
++    els.weather = createWeather(t('player.audioOnly.today'));
++    info.appendChild(els.weather.element);
++
 +    els.title = el('div', 'tt-audio-title');
 +    els.author = el('div', 'tt-audio-author');
 +    info.appendChild(els.title);
@@ -737,6 +802,7 @@ index 0000000..e1f7486
 +    }
 +    missingTicks = 0;
 +    updateClock();
++    els.weather.refresh();
 +    updateMetadata();
 +    updateProgress();
 +}
@@ -951,6 +1017,262 @@ index 0000000..e1f7486
 +window.addEventListener('keyup', keyHandler, true);
 +
 +export { enableAudioOnly, disableAudioOnly, toggleAudioOnly };
+diff --git a/mods/features/audioWeather.js b/mods/features/audioWeather.js
+new file mode 100644
+index 0000000..399297b
+--- /dev/null
++++ b/mods/features/audioWeather.js
+@@ -0,0 +1,250 @@
++// 5-day weather row for the audio-only screen.
++// YouTube TV's CSP only lets the page reach Google/YouTube hosts, so the
++// forecast is relayed through a public Google Sheet: its A1 cell runs
++// IMPORTDATA on Open-Meteo for the location found from the TV's IP (Morges),
++// and G1 holds the city name. The sheet is read through the Visualization
++// API, which allows www.youtube.com. Cached for an hour in localStorage.
++
++const SHEET_ID = '1H4rCefkljqqIWs59OCz7jyXSID3uUnaaj3vlhc5prQ0';
++const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&headers=0&range=A1:G12`;
++const CITY_COLUMN = 6;
++const CACHE_KEY = 'tt-audio-weather';
++const CACHE_TTL_MS = 60 * 60 * 1000;
++const REQUEST_TIMEOUT_MS = 8000;
++const DAYS = 5;
++const SVG_NS = 'http://www.w3.org/2000/svg';
++
++const COLORS = {
++    sun: '#FFC83D',
++    sunRay: '#FFAA00',
++    cloud: '#F2F6FA',
++    cloudShade: '#C9D3DD',
++    darkCloud: '#9BA7B4',
++    rain: '#4AA8FF',
++    snow: '#DDF1FF',
++    bolt: '#FFD43B',
++    fog: '#D5DCE3',
++};
++
++function el(tag, className, text) {
++    const node = document.createElement(tag);
++    if (className) node.className = className;
++    if (text) node.textContent = text;
++    return node;
++}
++
++function svgEl(tag, attrs) {
++    const node = document.createElementNS(SVG_NS, tag);
++    for (const key in attrs) node.setAttribute(key, attrs[key]);
++    return node;
++}
++
++function sun(cx, cy, r, rays) {
++    const g = svgEl('g', {});
++    if (rays) {
++        const d = [];
++        for (let i = 0; i < 8; i++) {
++            const a = (Math.PI / 4) * i;
++            const x1 = cx + Math.cos(a) * (r + 3), y1 = cy + Math.sin(a) * (r + 3);
++            const x2 = cx + Math.cos(a) * (r + 7), y2 = cy + Math.sin(a) * (r + 7);
++            d.push(`M${x1.toFixed(1)} ${y1.toFixed(1)}L${x2.toFixed(1)} ${y2.toFixed(1)}`);
++        }
++        g.appendChild(svgEl('path', { d: d.join(''), stroke: COLORS.sunRay, 'stroke-width': 3, 'stroke-linecap': 'round', fill: 'none' }));
++    }
++    g.appendChild(svgEl('circle', { cx, cy, r, fill: COLORS.sun }));
++    return g;
++}
++
++function cloud(dx, dy, fill) {
++    const g = svgEl('g', { transform: `translate(${dx} ${dy})` });
++    g.appendChild(svgEl('path', {
++        d: 'M13 38h23a8 8 0 0 0 .9-15.95A11.5 11.5 0 0 0 14.6 20 9 9 0 0 0 13 38z',
++        fill: fill || COLORS.cloud,
++    }));
++    g.appendChild(svgEl('path', {
++        d: 'M13 38h23a8 8 0 0 0 7.6-5.5A8 8 0 0 1 36 36H13a9 9 0 0 1-8.6-6.2A9 9 0 0 0 13 38z',
++        fill: COLORS.cloudShade,
++        opacity: 0.6,
++    }));
++    return g;
++}
++
++function lines(d, color, width) {
++    return svgEl('path', { d, stroke: color, 'stroke-width': width || 3, 'stroke-linecap': 'round', fill: 'none' });
++}
++
++// WMO weather codes -> icon kind.
++function kindFor(code) {
++    if (code === 0) return 'clear';
++    if (code === 1 || code === 2) return 'partly';
++    if (code === 3) return 'cloudy';
++    if (code === 45 || code === 48) return 'fog';
++    if ((code >= 71 && code <= 77) || code === 85 || code === 86) return 'snow';
++    if (code >= 95) return 'storm';
++    if (code >= 51) return 'rain';
++    return 'cloudy';
++}
++
++function weatherIcon(kind) {
++    const svg = svgEl('svg', { viewBox: '0 0 48 48', class: 'tt-audio-weather-icon' });
++    switch (kind) {
++        case 'clear':
++            svg.appendChild(sun(24, 24, 9, true));
++            break;
++        case 'partly':
++            svg.appendChild(sun(17, 17, 7.5, true));
++            svg.appendChild(cloud(4, 3));
++            break;
++        case 'cloudy':
++            svg.appendChild(cloud(-4, -6, COLORS.cloudShade));
++            svg.appendChild(cloud(2, 1));
++            break;
++        case 'fog':
++            svg.appendChild(cloud(0, -6));
++            svg.appendChild(lines('M8 39h32M12 44h24', COLORS.fog));
++            break;
++        case 'rain':
++            svg.appendChild(cloud(0, -6));
++            svg.appendChild(lines('M17 37l-2.5 6M25 37l-2.5 6M33 37l-2.5 6', COLORS.rain));
++            break;
++        case 'snow':
++            svg.appendChild(cloud(0, -6));
++            for (const [cx, cy] of [[15, 40], [24, 44], [33, 40]]) {
++                svg.appendChild(svgEl('circle', { cx, cy, r: 2.6, fill: COLORS.snow }));
++            }
++            break;
++        case 'storm':
++            svg.appendChild(cloud(0, -7, COLORS.darkCloud));
++            svg.appendChild(svgEl('path', { d: 'M26 29l-7 10h5.5l-3 8 10-12.5h-5.5l3-5.5z', fill: COLORS.bolt }));
++            break;
++    }
++    return svg;
++}
++
++function fetchText(url) {
++    let timer;
++    const timeout = new Promise((_, reject) => {
++        timer = setTimeout(() => reject(new Error('timeout')), REQUEST_TIMEOUT_MS);
++    });
++    const request = fetch(url).then((r) => {
++        if (!r.ok) throw new Error('HTTP ' + r.status);
++        return r.text();
++    });
++    return Promise.race([request, timeout]).then((data) => {
++        clearTimeout(timer);
++        return data;
++    }, (e) => {
++        clearTimeout(timer);
++        throw e;
++    });
++}
++
++function readCache() {
++    try {
++        const cached = JSON.parse(window.localStorage.getItem(CACHE_KEY));
++        if (cached && Date.now() - cached.savedAt < CACHE_TTL_MS) return cached;
++    } catch (e) { }
++    return null;
++}
++
++function writeCache(data) {
++    try {
++        window.localStorage.setItem(CACHE_KEY, JSON.stringify(data));
++    } catch (e) { }
++}
++
++// Spreadsheet serial day (days since 1899-12-30) or "Date(y,m,d)" -> "YYYY-MM-DD".
++function toIsoDate(value) {
++    let date = null;
++    if (typeof value === 'number' && value > 40000 && value < 80000) {
++        date = new Date(Date.UTC(1899, 11, 30) + Math.round(value) * 86400000);
++    } else if (typeof value === 'string') {
++        const m = value.match(/^Date\((\d+),(\d+),(\d+)/);
++        if (m) date = new Date(Date.UTC(+m[1], +m[2], +m[3]));
++        else if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
++    }
++    return date ? date.toISOString().slice(0, 10) : null;
++}
++
++function cellValue(row, index) {
++    const cell = row && row.c && row.c[index];
++    return cell ? cell.v : null;
++}
++
++async function loadForecast() {
++    const cached = readCache();
++    if (cached) return cached;
++
++    const text = await fetchText(SHEET_URL);
++    const json = JSON.parse(text.slice(text.indexOf('(') + 1, text.lastIndexOf(')')));
++    const rows = json && json.table && json.table.rows;
++    if (!rows) throw new Error('no sheet data');
++
++    let city = '';
++    const days = [];
++    for (const row of rows) {
++        const cityCell = cellValue(row, CITY_COLUMN);
++        if (!city && typeof cityCell === 'string') city = cityCell;
++        const date = toIsoDate(cellValue(row, 0));
++        const code = cellValue(row, 1);
++        const max = cellValue(row, 2);
++        const min = cellValue(row, 3);
++        if (date && typeof code === 'number' && typeof max === 'number' && typeof min === 'number') {
++            days.push({ date, code, max: Math.round(max), min: Math.round(min) });
++        }
++    }
++    if (!days.length) throw new Error('no forecast');
++
++    const data = { savedAt: Date.now(), city, days: days.slice(0, DAYS) };
++    writeCache(data);
++    return data;
++}
++
++function dayLabel(date, index, todayLabel) {
++    if (index === 0) return todayLabel;
++    // Parse as local noon so the weekday is right in every time zone.
++    const d = new Date(date + 'T12:00:00');
++    try {
++        const label = d.toLocaleDateString(navigator.language || undefined, { weekday: 'short' });
++        return label.charAt(0).toUpperCase() + label.slice(1).replace(/\.$/, '');
++    } catch (e) {
++        return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
++    }
++}
++
++function render(container, data, todayLabel) {
++    while (container.firstChild) container.removeChild(container.firstChild);
++    data.days.forEach((day, i) => {
++        const item = el('div', 'tt-audio-weather-day');
++        item.appendChild(el('div', 'tt-audio-weather-label', dayLabel(day.date, i, todayLabel)));
++        item.appendChild(weatherIcon(kindFor(day.code)));
++        const temps = el('div', 'tt-audio-weather-temps');
++        temps.appendChild(el('span', 'tt-audio-weather-max', day.max + '°'));
++        temps.appendChild(el('span', 'tt-audio-weather-min', day.min + '°'));
++        item.appendChild(temps);
++        container.appendChild(item);
++    });
++    if (data.city) container.appendChild(el('div', 'tt-audio-weather-city', data.city));
++    container.style.display = '';
++}
++
++// Creates the weather row; it stays hidden until a forecast is available.
++export function createWeather(todayLabel) {
++    const container = el('div', 'tt-audio-weather');
++    container.style.display = 'none';
++    let lastRefresh = 0;
++
++    function refresh() {
++        if (Date.now() - lastRefresh < CACHE_TTL_MS) return;
++        lastRefresh = Date.now();
++        loadForecast()
++            .then((data) => render(container, data, todayLabel))
++            .catch((e) => {
++                // Try again sooner after a failure (network not ready yet, etc.).
++                lastRefresh = Date.now() - CACHE_TTL_MS + 5 * 60 * 1000;
++                console.info('[AudioOnly] weather unavailable:', e && e.message);
++            });
++    }
++
++    return { element: container, refresh };
++}
 diff --git a/mods/resolveCommand.js b/mods/resolveCommand.js
 index 3d2d10d..d9b7216 100644
 --- a/mods/resolveCommand.js
@@ -1019,10 +1341,10 @@ index 3d2d10d..d9b7216 100644
              window.h5vcc.tizentube.EnterPIP();
              break;
 diff --git a/mods/translations/resources/en.json b/mods/translations/resources/en.json
-index 741901a..761fac5 100644
+index 741901a..bd17463 100644
 --- a/mods/translations/resources/en.json
 +++ b/mods/translations/resources/en.json
-@@ -294,6 +294,13 @@
+@@ -294,6 +294,14 @@
              "button": "Share",
              "qrCodeScanMessage": "Scan the QR code below to share this video."
          },
@@ -1030,6 +1352,7 @@ index 741901a..761fac5 100644
 +            "button": "Audio only",
 +            "badge": "Audio mode",
 +            "exit": "Show video",
++            "today": "Today",
 +            "live": "Live",
 +            "hint": "OK: play/pause  ·  ◀ ▶: 10 s  ·  CH +/−: next/previous  ·  Back: show video"
 +        },
@@ -1037,10 +1360,10 @@ index 741901a..761fac5 100644
          "chapters": {
              "title": "Chapters",
 diff --git a/mods/translations/resources/fr.json b/mods/translations/resources/fr.json
-index dc83f29..91dbe99 100644
+index dc83f29..1655171 100644
 --- a/mods/translations/resources/fr.json
 +++ b/mods/translations/resources/fr.json
-@@ -294,6 +294,13 @@
+@@ -294,6 +294,14 @@
              "button": "Partager",
              "qrCodeScanMessage": "Scannez le code QR ci-dessous pour partager cette vidéo."
          },
@@ -1048,6 +1371,7 @@ index dc83f29..91dbe99 100644
 +            "button": "Audio seulement",
 +            "badge": "Mode audio",
 +            "exit": "Afficher la vidéo",
++            "today": "Auj.",
 +            "live": "En direct",
 +            "hint": "OK : lecture/pause  ·  ◀ ▶ : 10 s  ·  CH +/− : suivant/précédent  ·  Retour : afficher la vidéo"
 +        },
