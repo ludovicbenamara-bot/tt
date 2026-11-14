@@ -160,6 +160,50 @@ index 0000000..2dfe900
 +        },
 +    };
 +}
+diff --git a/mods/features/audioHue.js b/mods/features/audioHue.js
+new file mode 100644
+index 0000000..e67927c
+--- /dev/null
++++ b/mods/features/audioHue.js
+@@ -0,0 +1,38 @@
++// Philips Hue ambiance: every time a new video starts (audio mode or not),
++// the Hue strip is turned on in the artwork's dominant colour. The APK's
++// local server talks to the Hue Bridge; the bridge address and key are set
++// up once on the TV and are not part of this script.
++
++import { colorFromImage } from './audioSpectrum.js';
++
++const HUE_URL = 'http://127.0.0.1:47913/hue';
++const CHECK_MS = 2000;
++const VIDEO_ID_RE = /^[\w-]{11}$/;
++// Colour for artwork without a clear hue: warm white.
++const NEUTRAL_RGB = [255, 214, 170];
++
++let lastVideoId = null;
++
++function currentVideoId() {
++    const player = document.querySelector('.html5-video-player');
++    try {
++        const data = player && player.getVideoData ? player.getVideoData() : null;
++        return data && data.video_id;
++    } catch (e) {
++        return null;
++    }
++}
++
++function check() {
++    const videoId = currentVideoId();
++    if (!videoId || videoId === lastVideoId || !VIDEO_ID_RE.test(videoId)) return;
++    const video = document.querySelector('video');
++    if (!video || video.paused) return;
++    lastVideoId = videoId;
++    colorFromImage(`https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, (rgb) => {
++        const [r, g, b] = rgb || NEUTRAL_RGB;
++        fetch(`${HUE_URL}?r=${r}&g=${g}&b=${b}`, { cache: 'no-store' }).catch(() => { });
++    });
++}
++
++setInterval(check, CHECK_MS);
 diff --git a/mods/features/audioLedClock.js b/mods/features/audioLedClock.js
 new file mode 100644
 index 0000000..7a7a925
@@ -1609,10 +1653,10 @@ index 0000000..c621afd
 +export { enableAudioOnly, disableAudioOnly, toggleAudioOnly };
 diff --git a/mods/features/audioSpectrum.js b/mods/features/audioSpectrum.js
 new file mode 100644
-index 0000000..05ef315
+index 0000000..acd42e0
 --- /dev/null
 +++ b/mods/features/audioSpectrum.js
-@@ -0,0 +1,263 @@
+@@ -0,0 +1,278 @@
 +// Winamp-style LED spectrum analyser for the audio-only screen: columns of
 +// LED segments on a dark dot matrix, white peak caps that hold then fall, and
 +// a blue dotted baseline. The segments take the artwork's dominant colour
@@ -1701,6 +1745,21 @@ index 0000000..05ef315
 +
 +function mix(a, b, t) {
 +    return `rgb(${Math.round(a[0] + (b[0] - a[0]) * t)}, ${Math.round(a[1] + (b[1] - a[1]) * t)}, ${Math.round(a[2] + (b[2] - a[2]) * t)})`;
++}
++
++// Calls back with the artwork's LED colour [r, g, b], or null for grey art.
++export function colorFromImage(url, callback) {
++    const img = new Image();
++    img.crossOrigin = 'anonymous';
++    img.onload = () => {
++        let hue = null;
++        try {
++            hue = dominantHue(img);
++        } catch (e) { }
++        callback(hue === null ? null : hslToRgb(hue, 0.9, 0.58));
++    };
++    img.onerror = () => callback(null);
++    img.src = url;
 +}
 +
 +export function createSpectrum() {
@@ -2309,14 +2368,15 @@ index dc83f29..3536878 100644
          "chapters": {
              "title": "Chapitres",
 diff --git a/mods/userScript.js b/mods/userScript.js
-index f8a9c6e..b2603e7 100644
+index f8a9c6e..18210d1 100644
 --- a/mods/userScript.js
 +++ b/mods/userScript.js
-@@ -19,6 +19,7 @@ import "./features/moreSubtitles.js";
+@@ -19,6 +19,8 @@ import "./features/moreSubtitles.js";
  import "./features/captionStylePersistence.js";
  import "./features/updater.js";
  import "./features/pictureInPicture.js";
 +import "./features/audioOnly.js";
++import "./features/audioHue.js";
  import "./features/preferredVideoQuality.js";
  import "./features/videoQueuing.js";
  import "./features/enableFeatures.js";
