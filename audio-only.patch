@@ -458,7 +458,7 @@ index 0000000..9454356
 +setInterval(check, CHECK_MS);
 diff --git a/mods/features/audioHueTile.js b/mods/features/audioHueTile.js
 new file mode 100644
-index 0000000..2e667fe
+index 0000000..75f3097
 --- /dev/null
 +++ b/mods/features/audioHueTile.js
 @@ -0,0 +1,132 @@
@@ -548,7 +548,7 @@ index 0000000..2e667fe
 +        // Tinted glass in the light's colour, fading to the right: shows the
 +        // colour without becoming the brightest thing on the screen.
 +        tile.style.background = on
-+            ? `linear-gradient(90deg, rgba(${r}, ${g}, ${b}, 0.55) 0%, rgba(${r}, ${g}, ${b}, 0.22) 100%), rgba(14, 16, 20, 0.5)`
++            ? `linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.04) 100%), linear-gradient(90deg, rgba(${r}, ${g}, ${b}, 0.5) 0%, rgba(${r}, ${g}, ${b}, 0.16) 100%)`
 +            : '';
 +        iconWrap.style.color = on ? `rgb(${r}, ${g}, ${b})` : '';
 +    }
@@ -754,10 +754,10 @@ index 0000000..5513018
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..efdbe8f
+index 0000000..ebb3a3d
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,900 @@
+@@ -0,0 +1,1022 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -1073,10 +1073,11 @@ index 0000000..efdbe8f
 +.tt-audio-spectrum {
 +    display: block;
 +    width: 100%;
-+    flex: 0 0 15vh;
-+    height: 15vh;
-+    /* Centred in the room between the title and the progress bar. */
-+    margin: auto 0;
++    /* Takes all the free height between the title and the progress bar. */
++    flex: 1 1 0;
++    height: auto;
++    min-height: 15vh;
++    margin: 3vh 0 2.6vh;
 +}
 +
 +.tt-audio-bar {
@@ -1657,6 +1658,127 @@ index 0000000..efdbe8f
 +    .tt-audio-weather { width: 88vw; gap: 1.5vw; margin-bottom: 2vh; }
 +    .tt-audio-weather-icon { width: 9vw; height: 9vw; }
 +    .tt-audio-led { width: 88vw; height: calc(88vw * 17 / 62); }
++}
++
++/* ------------------------------------------------------------------------
++   Liquid Glass theme: every control, tile and label is the same translucent
++   glass (light top-lit fill, bright top edge, fine rim, soft shadow). Drawn
++   with gradients only: a real backdrop blur would cost the TV a lot of CPU.
++   ------------------------------------------------------------------------ */
++
++/* Clock: bigger flaps straight on the background, no card behind. */
++.tt-audio-led.tt-flap {
++    height: 15vh;
++    padding: 0;
++    background: none;
++    box-shadow: none;
++}
++
++.tt-flap-card {
++    width: 8.4vh;
++    height: 10.6vh;
++    border-radius: 1vh;
++}
++
++.tt-flap-char {
++    font-size: 8.6vh;
++    line-height: 10.6vh;
++}
++
++.tt-flap-colon {
++    height: 10.6vh;
++    margin: 0 1.3vh;
++}
++
++.tt-flap-colon i {
++    width: 1.3vh;
++    height: 1.3vh;
++    border-radius: 0.2vh;
++}
++
++.tt-flap-colon i + i {
++    margin-top: 2.8vh;
++}
++
++.tt-flap-label {
++    font-size: 1.6vh;
++    text-shadow: 0 0.2vh 0.8vh rgba(0, 0, 0, 0.5);
++}
++
++/* Playback buttons: glass circles. */
++.tt-audio-btn {
++    background: linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.06) 100%);
++    box-shadow: inset 0 0.14vh 0 rgba(255, 255, 255, 0.5), inset 0 0 0 0.12vh rgba(255, 255, 255, 0.18), 0 1vh 2.4vh rgba(0, 0, 0, 0.25);
++}
++
++.tt-audio-btn-main {
++    background: linear-gradient(180deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.1) 100%);
++    box-shadow: inset 0 0.16vh 0 rgba(255, 255, 255, 0.65), inset 0 0 0 0.12vh rgba(255, 255, 255, 0.24), 0 1.2vh 3vh rgba(0, 0, 0, 0.3);
++}
++
++/* Forecast: no card, five glass tiles. */
++.tt-audio-weather {
++    padding: 0;
++    background: none;
++    box-shadow: none;
++}
++
++.tt-audio-weather-day {
++    background: linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.06) 100%);
++    box-shadow: inset 0 0.14vh 0 rgba(255, 255, 255, 0.5), inset 0 0 0 0.12vh rgba(255, 255, 255, 0.18), 0 1vh 2.4vh rgba(0, 0, 0, 0.22);
++}
++
++.tt-audio-weather-day:first-child {
++    background: linear-gradient(180deg, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0.12) 100%);
++    box-shadow: inset 0 0.16vh 0 rgba(255, 255, 255, 0.7), inset 0 0 0 0.16vh rgba(255, 255, 255, 0.45), 0 1vh 2.4vh rgba(0, 0, 0, 0.22);
++}
++
++.tt-audio-weather-temps span,
++.tt-audio-map-temps span {
++    background: rgba(0, 0, 0, 0.22);
++}
++
++/* Map: a glass panel; city labels as dark glass, readable on the green land. */
++.tt-audio-map {
++    background: linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.04) 100%);
++    box-shadow: inset 0 0.14vh 0 rgba(255, 255, 255, 0.5), inset 0 0 0 0.12vh rgba(255, 255, 255, 0.18), 0 1.6vh 4vh rgba(0, 0, 0, 0.3);
++}
++
++.tt-audio-map-pill {
++    background: linear-gradient(180deg, rgba(48, 58, 70, 0.78) 0%, rgba(24, 30, 38, 0.78) 100%);
++    box-shadow: inset 0 0.12vh 0 rgba(255, 255, 255, 0.35), inset 0 0 0 0.1vh rgba(255, 255, 255, 0.14), 0 0.5vh 1.2vh rgba(0, 0, 0, 0.3);
++}
++
++/* Hue tile and its buttons: glass (tinted with the light's colour in JS). */
++.tt-hue {
++    background: linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.05) 100%);
++    box-shadow: inset 0 0.14vh 0 rgba(255, 255, 255, 0.5), inset 0 0 0 0.12vh rgba(255, 255, 255, 0.18), 0 1vh 2.4vh rgba(0, 0, 0, 0.22);
++}
++
++.tt-hue-focused {
++    box-shadow: 0 0 0 0.3vh #fff, 0 1vh 3vh rgba(0, 0, 0, 0.45);
++}
++
++.tt-hue-rhythm {
++    background: linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.05) 100%);
++    box-shadow: inset 0 0.14vh 0 rgba(255, 255, 255, 0.5), inset 0 0 0 0.12vh rgba(255, 255, 255, 0.18);
++}
++
++.tt-hue-rhythm-on {
++    background: linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.78) 100%);
++    box-shadow: inset 0 0.12vh 0 #fff, 0 0.4vh 1vh rgba(0, 0, 0, 0.25);
++}
++
++.tt-hue-switch {
++    background: linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0.1) 100%);
++    box-shadow: inset 0 0.12vh 0 rgba(255, 255, 255, 0.4);
++}
++
++/* "Show video": glass pill. */
++.tt-audio-exit {
++    background: linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.06) 100%);
++    box-shadow: inset 0 0.14vh 0 rgba(255, 255, 255, 0.5), inset 0 0 0 0.12vh rgba(255, 255, 255, 0.18), 0 0.8vh 2vh rgba(0, 0, 0, 0.25);
++    color: #fff;
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
