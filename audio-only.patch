@@ -754,10 +754,10 @@ index 0000000..5513018
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..41f4f50
+index 0000000..efdbe8f
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,911 @@
+@@ -0,0 +1,900 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -1160,17 +1160,6 @@ index 0000000..41f4f50
 +.tt-audio-elapsed {
 +    color: rgba(255, 255, 255, 0.85);
 +    transition: color 0.2s ease;
-+}
-+
-+.tt-audio-badge {
-+    /* Discreet: the screen already says it is in audio mode. */
-+    padding: 0.3vh 1vh;
-+    border-radius: 0.6vh;
-+    background: rgba(255, 255, 255, 0.08);
-+    font-size: 1.3vh;
-+    letter-spacing: 0.1em;
-+    text-transform: uppercase;
-+    color: rgba(255, 255, 255, 0.5);
 +}
 +
 +.tt-audio-controls {
@@ -1671,10 +1660,10 @@ index 0000000..41f4f50
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..5b8fa40
+index 0000000..b9023bb
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,675 @@
+@@ -0,0 +1,676 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode, Down = Hue tile.
@@ -1688,6 +1677,7 @@ index 0000000..5b8fa40
 +import { createFlapClock } from './audioFlapClock.js';
 +import { createBurnInGuard } from './audioBurnIn.js';
 +import { createHueTile } from './audioHueTile.js';
++import { cleanTitle } from './audioTitle.js';
 +import { mainVideo, mainPlayer } from './audioMainVideo.js';
 +
 +const SEEK_STEP = 10;
@@ -1851,10 +1841,8 @@ index 0000000..5b8fa40
 +    progress.appendChild(els.bar);
 +    const times = el('div', 'tt-audio-times');
 +    els.current = el('span', 'tt-audio-elapsed');
-+    els.badge = el('span', 'tt-audio-badge', t('player.audioOnly.badge'));
 +    els.duration = el('span');
 +    times.appendChild(els.current);
-+    times.appendChild(els.badge);
 +    times.appendChild(els.duration);
 +    progress.appendChild(times);
 +    info.appendChild(progress);
@@ -1987,8 +1975,10 @@ index 0000000..5b8fa40
 +    // Text can arrive after the video starts, so keep filling it while empty.
 +    if (isNewVideo || !els.title.textContent || !els.author.textContent) {
 +        const info = getTitleAndAuthor(player, data);
-+        els.title.textContent = info.title;
-+        els.author.textContent = info.author;
++        // Song and artist, as a music app shows them (no "(Official Video)").
++        const clean = cleanTitle(info.title, info.author);
++        els.title.textContent = clean.title;
++        els.author.textContent = clean.artist;
 +    }
 +
 +    if (!isNewVideo) return;
@@ -2352,10 +2342,10 @@ index 0000000..5b8fa40
 +export { enableAudioOnly, disableAudioOnly, toggleAudioOnly };
 diff --git a/mods/features/audioSpectrum.js b/mods/features/audioSpectrum.js
 new file mode 100644
-index 0000000..acd42e0
+index 0000000..724a237
 --- /dev/null
 +++ b/mods/features/audioSpectrum.js
-@@ -0,0 +1,278 @@
+@@ -0,0 +1,279 @@
 +// Winamp-style LED spectrum analyser for the audio-only screen: columns of
 +// LED segments on a dark dot matrix, white peak caps that hold then fall, and
 +// a blue dotted baseline. The segments take the artwork's dominant colour
@@ -2383,7 +2373,8 @@ index 0000000..acd42e0
 +const RETRY_MS = 5000;
 +
 +const COLORS = {
-+    off: 'rgba(120, 140, 120, 0.16)',
++    // Neutral: unlit cells must not fight the artwork colour.
++    off: 'rgba(255, 255, 255, 0.07)',
 +    low: [96, 196, 40],
 +    high: [176, 240, 72],
 +    peak: 'rgba(235, 240, 235, 0.95)',
@@ -2633,6 +2624,60 @@ index 0000000..acd42e0
 +            img.src = url;
 +        },
 +    };
++}
+diff --git a/mods/features/audioTitle.js b/mods/features/audioTitle.js
+new file mode 100644
+index 0000000..3a983a6
+--- /dev/null
++++ b/mods/features/audioTitle.js
+@@ -0,0 +1,48 @@
++// Music-app style title and artist from a YouTube video's title and channel:
++// "Michael Jackson - Thriller (Official 4K Video)" by "michaeljacksonVEVO"
++// becomes "Thriller" by "Michael Jackson".
++
++// Bracketed parts that only describe the upload, not the song.
++const NOISE = /\b(official|officiel|officielle|video|vid[eé]o|clip|audio|lyrics?|paroles|visuali[sz]er|4k|hd|hq|uhd|remaster(ed)?|mv|m\/v|full album)\b/i;
++
++function stripNoise(title) {
++    // (…) and […] groups made of upload words: "(Official 4K Video)", "[HD]".
++    return title.replace(/\s*[([]([^)\]]*)[)\]]/g, (match, inner) => (NOISE.test(inner) ? '' : match));
++}
++
++export function cleanArtist(author) {
++    return String(author || '')
++        .replace(/\s*-\s*Topic$/i, '')
++        .replace(/VEVO$/i, '')
++        .replace(/\s*Official$/i, '')
++        .trim();
++}
++
++function normalise(text) {
++    return text.toLowerCase().replace(/[^a-z0-9]/g, '');
++}
++
++/**
++ * @returns {{ title: string, artist: string }} cleaned for display. Falls
++ * back to the original text whenever cleaning would leave nothing.
++ */
++export function cleanTitle(rawTitle, rawAuthor) {
++    const original = String(rawTitle || '').trim();
++    let artist = cleanArtist(rawAuthor);
++    let title = stripNoise(original).replace(/\s{2,}/g, ' ').trim();
++
++    // "Artist - Song" (also – and —): keep the song, and the artist if the
++    // channel name was not a person (e.g. a label or a "VEVO" channel).
++    const dash = title.match(/^(.+?)\s+[-–—]\s+(.+)$/);
++    if (dash) {
++        const left = dash[1].trim();
++        const right = dash[2].trim();
++        const channel = normalise(String(rawAuthor || ''));
++        if (!artist || channel.indexOf(normalise(left)) !== -1 || normalise(left).indexOf(normalise(artist)) !== -1) {
++            artist = left;
++            title = right;
++        }
++    }
++    title = title.replace(/^["“”']+|["“”']+$/g, '').trim();
++    return { title: title || original, artist: artist || String(rawAuthor || '') };
 +}
 diff --git a/mods/features/audioWeather.js b/mods/features/audioWeather.js
 new file mode 100644
