@@ -162,22 +162,27 @@ index 0000000..2dfe900
 +}
 diff --git a/mods/features/audioFlapClock.js b/mods/features/audioFlapClock.js
 new file mode 100644
-index 0000000..250569b
+index 0000000..4412200
 --- /dev/null
 +++ b/mods/features/audioFlapClock.js
-@@ -0,0 +1,92 @@
+@@ -0,0 +1,108 @@
 +// Airport split-flap clock for the audio-only screen: hours / minutes /
-+// seconds, each digit on its own dark flap card with the hinge line across the
-+// middle, a small label above each group (time only, no date). The colons
-+// take the artwork's colour (yellow until one is set).
++// seconds, and below them day / month / year in smaller flaps, each character
++// on its own dark flap card with the hinge line across the middle, a small
++// label above each group. The colons take the artwork's colour (yellow until
++// one is set).
 +// No flip animation (the TV recomposites the whole screen for any moving
 +// layer): only the cards whose character changed are updated, once a second.
 +
 +const DEFAULT_RGB = [245, 214, 10];
 +
 +const LABELS = {
-+    fr: { h: 'HEURES', m: 'MINUTES', s: 'SECONDES' },
-+    en: { h: 'HRS', m: 'MIN', s: 'SEC' },
++    fr: { h: 'HEURES', m: 'MINUTES', s: 'SECONDES', day: 'JOUR', month: 'MOIS', year: 'ANNÉE' },
++    en: { h: 'HRS', m: 'MIN', s: 'SEC', day: 'DAY', month: 'MONTH', year: 'YEAR' },
++};
++const MONTHS = {
++    fr: ['JAN', 'FEV', 'MAR', 'AVR', 'MAI', 'JUN', 'JUL', 'AOU', 'SEP', 'OCT', 'NOV', 'DEC'],
++    en: ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'],
 +};
 +
 +function el(tag, className, text) {
@@ -230,9 +235,19 @@ index 0000000..250569b
 +    top.appendChild(colons[1]);
 +    top.appendChild(s.wrap);
 +
-+    card.appendChild(top);
++    // Date row: same flaps, a size smaller.
++    const bottom = el('div', 'tt-flap-row tt-flap-row-date');
++    const day = group(L.day, 2);
++    const month = group(L.month, 3);
++    const year = group(L.year, 2);
++    bottom.appendChild(day.wrap);
++    bottom.appendChild(month.wrap);
++    bottom.appendChild(year.wrap);
 +
-+    const cards = [...h.cards, ...m.cards, ...s.cards];
++    card.appendChild(top);
++    card.appendChild(bottom);
++
++    const cards = [...h.cards, ...m.cards, ...s.cards, ...day.cards, ...month.cards, ...year.cards];
 +    let lastText = '';
 +
 +    function setColor(rgb) {
@@ -249,7 +264,8 @@ index 0000000..250569b
 +        update() {
 +            const now = new Date();
 +            const pad = (n) => (n < 10 ? '0' : '') + n;
-+            const text = pad(now.getHours()) + pad(now.getMinutes()) + pad(now.getSeconds());
++            const text = pad(now.getHours()) + pad(now.getMinutes()) + pad(now.getSeconds()) +
++                pad(now.getDate()) + MONTHS[lang][now.getMonth()] + pad(now.getFullYear() % 100);
 +            if (text === lastText) return;
 +            for (let i = 0; i < cards.length; i++) {
 +                if (text[i] !== lastText[i]) cards[i].textContent = text[i];
@@ -655,10 +671,10 @@ index 0000000..2d7db50
 +}
 diff --git a/mods/features/audioMap.js b/mods/features/audioMap.js
 new file mode 100644
-index 0000000..5513018
+index 0000000..fac2f52
 --- /dev/null
 +++ b/mods/features/audioMap.js
-@@ -0,0 +1,93 @@
+@@ -0,0 +1,105 @@
 +// Swiss weather map for the audio-only screen, in the style of the
 +// MeteoSwiss forecast map: country shape with the main lakes, and for each
 +// city a weather icon with a name / min / max label.
@@ -695,6 +711,9 @@ index 0000000..5513018
 +    canvas.className = 'tt-audio-map-shape';
 +    card.appendChild(canvas);
 +    let drawnWidth = 0;
++    // Land and lakes in dark shades of the artwork colour (set by setColor).
++    let landColor = '#3d4a44';
++    let lakeColor = '#26302c';
 +
 +    function drawShape() {
 +        const ratio = window.devicePixelRatio || 1;
@@ -707,12 +726,12 @@ index 0000000..5513018
 +        const ctx = canvas.getContext('2d');
 +        ctx.setTransform(w / MAP.width, 0, 0, h / MAP.height, 0, 0);
 +        const land = new Path2D(BORDER);
-+        ctx.fillStyle = '#79b49c';
++        ctx.fillStyle = landColor;
 +        ctx.fill(land);
 +        ctx.lineWidth = 1.5;
-+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
++        ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
 +        ctx.stroke(land);
-+        ctx.fillStyle = '#8ec3f5';
++        ctx.fillStyle = lakeColor;
 +        ctx.fill(new Path2D(LAKES));
 +    }
 +
@@ -750,14 +769,23 @@ index 0000000..5513018
 +        setTimeout(drawShape, 0);
 +    }
 +
-+    return { element: card, setCities };
++    // rgb: the artwork colour [r, g, b], or null for neutral dark grey-green.
++    function setColor(rgb) {
++        const dark = (k) => (rgb ? `rgb(${Math.round(rgb[0] * k)}, ${Math.round(rgb[1] * k)}, ${Math.round(rgb[2] * k)})` : null);
++        landColor = dark(0.42) || '#3d4a44';
++        lakeColor = dark(0.22) || '#26302c';
++        drawnWidth = 0;
++        if (card.style.display !== 'none') drawShape();
++    }
++
++    return { element: card, setCities, setColor };
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..c06425a
+index 0000000..6ad0ece
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,1025 @@
+@@ -0,0 +1,1258 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -1783,9 +1811,242 @@ index 0000000..c06425a
 +    box-shadow: inset 0 0.14vh 0 rgba(255, 255, 255, 0.5), inset 0 0 0 0.12vh rgba(255, 255, 255, 0.18), 0 0.8vh 2vh rgba(0, 0, 0, 0.25);
 +    color: #fff;
 +}
++
++/* Left column layout (clock + date, forecast, map): a wider column for a
++   bigger clock, bigger forecast tiles, and a smaller map centred below. */
++.tt-audio-led,
++.tt-audio-weather {
++    width: 70vh;
++}
++
++.tt-flap-card {
++    width: 10vh;
++    height: 13.6vh;
++}
++
++.tt-flap-char {
++    font-size: 11.4vh;
++    line-height: 13.6vh;
++}
++
++.tt-flap-colon {
++    height: 13.6vh;
++}
++
++/* Date flaps: a size smaller, groups spread across the column. */
++.tt-flap-row-date {
++    justify-content: space-between;
++    margin-top: 0.8vh;
++}
++
++.tt-flap-row-date .tt-flap-card {
++    width: 9vh;
++    height: 8.8vh;
++    border-radius: 1vh;
++}
++
++.tt-flap-row-date .tt-flap-char {
++    font-size: 7.2vh;
++    line-height: 8.8vh;
++}
++
++.tt-flap-row-date .tt-flap-label {
++    font-size: 1.4vh;
++}
++
++/* Forecast tiles: bigger icons and text. */
++.tt-audio-weather-day {
++    padding: 1.2vh 0 1.4vh;
++}
++
++.tt-audio-weather-label {
++    font-size: 2.3vh;
++}
++
++.tt-audio-weather-icon {
++    width: 8.6vh;
++    height: 8.6vh;
++}
++
++.tt-audio-weather-temps {
++    font-size: 2.2vh;
++}
++
++/* Map: smaller, centred; labels scaled down with it. */
++.tt-audio-map {
++    width: 48vh;
++    height: calc(48vh * 646 / 1000);
++}
++
++.tt-audio-map-icon {
++    width: 3.1vh;
++    height: 3.1vh;
++}
++
++.tt-audio-map-name,
++.tt-audio-map-temps {
++    font-size: 1.3vh;
++}
++
++.tt-audio-ambient .tt-audio-led.tt-flap {
++    width: 70vh;
++}
++
++/* Map homogenised with the other tiles: a card as wide as the column, with
++   the forecast tiles' glass and corners; the map keeps its size, centred
++   inside; city labels in the same glass as the forecast tiles. */
++.tt-audio-map {
++    width: 70vh;
++    height: calc(48vh * 646 / 1000);
++    border-radius: 1.4vh;
++    background: linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.06) 100%);
++    box-shadow: inset 0 0.14vh 0 rgba(255, 255, 255, 0.5), inset 0 0 0 0.12vh rgba(255, 255, 255, 0.18), 0 1vh 2.4vh rgba(0, 0, 0, 0.22);
++}
++
++.tt-audio-map-shape,
++.tt-audio-map-labels {
++    left: calc(50% - 24vh);
++    width: 48vh;
++}
++
++.tt-audio-map-pill {
++    border-radius: 1vh;
++    background: linear-gradient(180deg, rgba(255, 255, 255, 0.26) 0%, rgba(255, 255, 255, 0.1) 100%);
++    box-shadow: inset 0 0.12vh 0 rgba(255, 255, 255, 0.55), inset 0 0 0 0.1vh rgba(255, 255, 255, 0.2), 0 0.5vh 1.2vh rgba(0, 0, 0, 0.3);
++    text-shadow: 0 0.1vh 0.4vh rgba(0, 0, 0, 0.45);
++}
++
++/* Smaller city labels on the map, so neighbouring cities do not overlap. */
++.tt-audio-map-icon {
++    width: 2.4vh;
++    height: 2.4vh;
++    margin-right: -0.4vh;
++}
++
++.tt-audio-map-city {
++    transform: translate(-1.2vh, -50%);
++}
++
++.tt-audio-map-city-above {
++    transform: translate(-50%, calc(-100% + 1.2vh));
++}
++
++.tt-audio-map-pill {
++    padding: 0.2vh 0.6vh 0.25vh 0.7vh;
++    border-radius: 0.7vh;
++}
++
++.tt-audio-map-name,
++.tt-audio-map-temps {
++    font-size: 1.05vh;
++}
++
++.tt-audio-map-temps {
++    margin-top: 0.15vh;
++}
++
++.tt-audio-map-temps span {
++    padding: 0 0.3vh;
++    border-radius: 0.3vh;
++}
++
++.tt-audio-map-temps span + span {
++    margin-left: 0.2vh;
++}
++
++/* ------------------------------------------------------------------------
++   Full-screen layout: no "Show video" button any more, so both columns use
++   the whole height (92vh). Left: clock, date and forecast at full width of a
++   wider column, the map taking all the height left. Right: the spectrum grows
++   to fill (see .tt-audio-spectrum), controls and Hue tile at the bottom.
++   ------------------------------------------------------------------------ */
++.tt-audio-content {
++    height: 92vh;
++}
++
++.tt-audio-led,
++.tt-audio-weather,
++.tt-audio-map {
++    width: 76vh;
++}
++
++.tt-flap-card {
++    width: 11vh;
++    height: 15.6vh;
++}
++
++.tt-flap-char {
++    font-size: 13vh;
++    line-height: 15.6vh;
++}
++
++.tt-flap-colon {
++    height: 15.6vh;
++}
++
++.tt-flap-row-date .tt-flap-card {
++    width: 10vh;
++    height: 10.4vh;
++}
++
++.tt-flap-row-date .tt-flap-char {
++    font-size: 8.6vh;
++    line-height: 10.4vh;
++}
++
++.tt-flap-label {
++    font-size: 1.8vh;
++}
++
++.tt-flap-row-date .tt-flap-label {
++    font-size: 1.6vh;
++}
++
++.tt-audio-weather-day {
++    padding: 1.4vh 0 1.6vh;
++}
++
++.tt-audio-weather-label {
++    font-size: 2.6vh;
++}
++
++.tt-audio-weather-icon {
++    width: 10vh;
++    height: 10vh;
++}
++
++.tt-audio-weather-temps {
++    font-size: 2.5vh;
++}
++
++/* The map card takes all the height left; the map keeps its proportions,
++   centred in it. */
++.tt-audio-map {
++    flex: 1 1 0;
++    height: auto;
++    min-height: 20vh;
++}
++
++.tt-audio-map-shape,
++.tt-audio-map-labels {
++    top: 4%;
++    height: 92%;
++    width: auto;
++    aspect-ratio: 1000 / 646;
++    left: 50%;
++    transform: translateX(-50%);
++}
++
++.tt-audio-ambient .tt-audio-content {
++    height: auto;
++}
++
++.tt-audio-ambient .tt-audio-led.tt-flap {
++    width: 76vh;
++}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..b9023bb
+index 0000000..e47922e
 --- /dev/null
 +++ b/mods/features/audioOnly.js
 @@ -0,0 +1,676 @@
@@ -2009,10 +2270,9 @@ index 0000000..b9023bb
 +    content.appendChild(info);
 +    overlay.appendChild(content);
 +
++    // No "Show video" button any more (Back or the red key leave audio mode):
++    // the footer stays, empty, for the burn-in guard's pixel shift.
 +    const footer = el('div', 'tt-audio-footer');
-+    els.exit = el('button', 'tt-audio-exit', t('player.audioOnly.exit'));
-+    els.exit.addEventListener('click', () => disableAudioOnly('exit button'));
-+    footer.appendChild(els.exit);
 +    overlay.appendChild(footer);
 +
 +    els.burnIn = createBurnInGuard(overlay, content, footer);
@@ -2114,6 +2374,7 @@ index 0000000..b9023bb
 +        // Small thumbnail: enough to find the colour, quick to load.
 +        els.spectrum.setColorFromImage(`https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, (rgb) => {
 +            els.clock.setColor(rgb);
++            els.map.setColor(rgb);
 +            setAccent(rgb);
 +        });
 +    } else {
