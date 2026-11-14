@@ -160,6 +160,118 @@ index 0000000..2dfe900
 +        },
 +    };
 +}
+diff --git a/mods/features/audioFlapClock.js b/mods/features/audioFlapClock.js
+new file mode 100644
+index 0000000..d327e5b
+--- /dev/null
++++ b/mods/features/audioFlapClock.js
+@@ -0,0 +1,106 @@
++// Airport split-flap clock for the audio-only screen: hours / minutes /
++// seconds on the top row, day / month / year below, each character on its own
++// dark flap card with the hinge line across the middle, small labels above
++// each group. The colons take the artwork's colour (yellow until one is set).
++// No flip animation (the TV recomposites the whole screen for any moving
++// layer): only the cards whose character changed are updated, once a second.
++
++const DEFAULT_RGB = [245, 214, 10];
++
++const LABELS = {
++    fr: { h: 'HEURES', m: 'MINUTES', s: 'SECONDES', day: 'JOUR', month: 'MOIS', year: 'ANNÉE' },
++    en: { h: 'HRS', m: 'MIN', s: 'SEC', day: 'DAY', month: 'MONTH', year: 'YEAR' },
++};
++const MONTHS = {
++    fr: ['JAN', 'FEV', 'MAR', 'AVR', 'MAI', 'JUN', 'JUL', 'AOU', 'SEP', 'OCT', 'NOV', 'DEC'],
++    en: ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'],
++};
++
++function el(tag, className, text) {
++    const node = document.createElement(tag);
++    if (className) node.className = className;
++    if (text) node.textContent = text;
++    return node;
++}
++
++// A group: a label above `count` flap cards. Returns the group and its cards.
++function group(label, count) {
++    const wrap = el('div', 'tt-flap-group');
++    wrap.appendChild(el('div', 'tt-flap-label', label));
++    const row = el('div', 'tt-flap-cards');
++    const cards = [];
++    for (let i = 0; i < count; i++) {
++        const card = el('div', 'tt-flap-card');
++        const text = el('span', 'tt-flap-char');
++        card.appendChild(text);
++        // The hinge: a dark line across the middle with two small pins.
++        card.appendChild(el('div', 'tt-flap-hinge'));
++        row.appendChild(card);
++        cards.push(text);
++    }
++    wrap.appendChild(row);
++    return { wrap, cards };
++}
++
++function colon() {
++    const c = el('div', 'tt-flap-colon');
++    c.appendChild(el('i'));
++    c.appendChild(el('i'));
++    return c;
++}
++
++export function createFlapClock() {
++    const lang = String(navigator.language || 'fr').toLowerCase().startsWith('fr') ? 'fr' : 'en';
++    const L = LABELS[lang];
++
++    // Also a .tt-audio-led card, so the layout, dimming and ambient rules apply.
++    const card = el('div', 'tt-audio-led tt-flap');
++    const top = el('div', 'tt-flap-row');
++    const h = group(L.h, 2);
++    const m = group(L.m, 2);
++    const s = group(L.s, 2);
++    const colons = [colon(), colon()];
++    top.appendChild(h.wrap);
++    top.appendChild(colons[0]);
++    top.appendChild(m.wrap);
++    top.appendChild(colons[1]);
++    top.appendChild(s.wrap);
++
++    const bottom = el('div', 'tt-flap-row');
++    const day = group(L.day, 2);
++    const month = group(L.month, 3);
++    const year = group(L.year, 2);
++    bottom.appendChild(day.wrap);
++    bottom.appendChild(month.wrap);
++    bottom.appendChild(year.wrap);
++
++    card.appendChild(top);
++    card.appendChild(bottom);
++
++    const cards = [...h.cards, ...m.cards, ...s.cards, ...day.cards, ...month.cards, ...year.cards];
++    let lastText = '';
++
++    function setColor(rgb) {
++        const [r, g, b] = rgb || DEFAULT_RGB;
++        for (const c of colons) c.style.color = `rgb(${r}, ${g}, ${b})`;
++    }
++    setColor(DEFAULT_RGB);
++
++    return {
++        element: card,
++        // rgb: [r, g, b] (0-255), or null for the default yellow.
++        setColor,
++        // Called twice a second by the audio screen; touches only changed cards.
++        update() {
++            const now = new Date();
++            const pad = (n) => (n < 10 ? '0' : '') + n;
++            const text = pad(now.getHours()) + pad(now.getMinutes()) + pad(now.getSeconds()) +
++                pad(now.getDate()) + MONTHS[lang][now.getMonth()] + pad(now.getFullYear() % 100);
++            if (text === lastText) return;
++            for (let i = 0; i < cards.length; i++) {
++                if (text[i] !== lastText[i]) cards[i].textContent = text[i];
++            }
++            lastText = text;
++        },
++    };
++}
 diff --git a/mods/features/audioHue.js b/mods/features/audioHue.js
 new file mode 100644
 index 0000000..9454356
@@ -496,207 +608,6 @@ index 0000000..2e667fe
 +        },
 +    };
 +}
-diff --git a/mods/features/audioLedClock.js b/mods/features/audioLedClock.js
-new file mode 100644
-index 0000000..7a7a925
---- /dev/null
-+++ b/mods/features/audioLedClock.js
-@@ -0,0 +1,195 @@
-+// LED dot-matrix clock, like a station / studio wall clock: the time in large
-+// dot digits on the left, then a ring of 60 dots lit up to the current second
-+// (with the seconds inside), and the date (weekday, day, month) on the right.
-+// The LEDs take the artwork's colour (red until one is set).
-+// Drawn on a canvas: one dot per pixel of a 5x7 font.
-+
-+const DEFAULT_RGB = [255, 59, 42];
-+
-+// 5x7 font, one string per row ('1' = dot on).
-+const FONT = {
-+    '0': ['01110', '10001', '10011', '10101', '11001', '10001', '01110'],
-+    '1': ['00100', '01100', '00100', '00100', '00100', '00100', '01110'],
-+    '2': ['01110', '10001', '00001', '00010', '00100', '01000', '11111'],
-+    '3': ['11111', '00010', '00100', '00010', '00001', '10001', '01110'],
-+    '4': ['00010', '00110', '01010', '10010', '11111', '00010', '00010'],
-+    '5': ['11111', '10000', '11110', '00001', '00001', '10001', '01110'],
-+    '6': ['00110', '01000', '10000', '11110', '10001', '10001', '01110'],
-+    '7': ['11111', '00001', '00010', '00100', '01000', '01000', '01000'],
-+    '8': ['01110', '10001', '10001', '01110', '10001', '10001', '01110'],
-+    '9': ['01110', '10001', '10001', '01111', '00001', '00010', '01100'],
-+    'A': ['01110', '10001', '10001', '11111', '10001', '10001', '10001'],
-+    'B': ['11110', '10001', '10001', '11110', '10001', '10001', '11110'],
-+    'C': ['01110', '10001', '10000', '10000', '10000', '10001', '01110'],
-+    'D': ['11110', '10001', '10001', '10001', '10001', '10001', '11110'],
-+    'E': ['11111', '10000', '10000', '11110', '10000', '10000', '11111'],
-+    'F': ['11111', '10000', '10000', '11110', '10000', '10000', '10000'],
-+    'G': ['01110', '10001', '10000', '10111', '10001', '10001', '01111'],
-+    'H': ['10001', '10001', '10001', '11111', '10001', '10001', '10001'],
-+    'I': ['01110', '00100', '00100', '00100', '00100', '00100', '01110'],
-+    'J': ['00111', '00010', '00010', '00010', '00010', '10010', '01100'],
-+    'K': ['10001', '10010', '10100', '11000', '10100', '10010', '10001'],
-+    'L': ['10000', '10000', '10000', '10000', '10000', '10000', '11111'],
-+    'M': ['10001', '11011', '10101', '10101', '10001', '10001', '10001'],
-+    'N': ['10001', '10001', '11001', '10101', '10011', '10001', '10001'],
-+    'O': ['01110', '10001', '10001', '10001', '10001', '10001', '01110'],
-+    'P': ['11110', '10001', '10001', '11110', '10000', '10000', '10000'],
-+    'Q': ['01110', '10001', '10001', '10001', '10101', '10010', '01101'],
-+    'R': ['11110', '10001', '10001', '11110', '10100', '10010', '10001'],
-+    'S': ['01111', '10000', '10000', '01110', '00001', '00001', '11110'],
-+    'T': ['11111', '00100', '00100', '00100', '00100', '00100', '00100'],
-+    'U': ['10001', '10001', '10001', '10001', '10001', '10001', '01110'],
-+    'V': ['10001', '10001', '10001', '10001', '10001', '01010', '00100'],
-+    'W': ['10001', '10001', '10001', '10101', '10101', '10101', '01010'],
-+    'X': ['10001', '10001', '01010', '00100', '01010', '10001', '10001'],
-+    'Y': ['10001', '10001', '10001', '01010', '00100', '00100', '00100'],
-+    'Z': ['11111', '00001', '00010', '00100', '01000', '10000', '11111'],
-+    ':': ['0', '0', '1', '0', '1', '0', '0'],
-+    // Blank of the colon's width, so the minutes don't move when it blinks.
-+    ';': ['0', '0', '0', '0', '0', '0', '0'],
-+    ' ': ['000', '000', '000', '000', '000', '000', '000'],
-+};
-+
-+const DAYS = {
-+    fr: ['DIM', 'LUN', 'MAR', 'MER', 'JEU', 'VEN', 'SAM'],
-+    en: ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'],
-+};
-+const MONTHS = {
-+    fr: ['JANV', 'FEVR', 'MARS', 'AVR', 'MAI', 'JUIN', 'JUIL', 'AOUT', 'SEPT', 'OCT', 'NOV', 'DEC'],
-+    en: ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'],
-+};
-+
-+function textWidth(text) {
-+    let cols = 0;
-+    for (const ch of text) cols += (FONT[ch] || FONT[' '])[0].length + 1;
-+    return Math.max(0, cols - 1);
-+}
-+
-+export function createLedClock() {
-+    const card = document.createElement('div');
-+    card.className = 'tt-audio-led';
-+    const canvas = document.createElement('canvas');
-+    canvas.className = 'tt-audio-led-canvas';
-+    card.appendChild(canvas);
-+    const ctx = canvas.getContext('2d');
-+    const lang = String(navigator.language || 'fr').toLowerCase().startsWith('fr') ? 'fr' : 'en';
-+    let lastKey = '';
-+    let LIT;
-+    let UNLIT;
-+    let GLOW;
-+
-+    function setColor(rgb) {
-+        const [r, g, b] = rgb;
-+        LIT = `rgb(${r}, ${g}, ${b})`;
-+        UNLIT = `rgba(${r}, ${g}, ${b}, 0.12)`;
-+        GLOW = `rgba(${r}, ${g}, ${b}, 0.55)`;
-+        lastKey = '';
-+    }
-+    setColor(DEFAULT_RGB);
-+
-+    function dot(x, y, r, on) {
-+        ctx.beginPath();
-+        ctx.arc(x, y, r, 0, Math.PI * 2);
-+        ctx.fillStyle = on ? LIT : UNLIT;
-+        ctx.fill();
-+    }
-+
-+    // Draws text with its top-left at (x, y); `pitch` is the dot spacing.
-+    function drawText(text, x, y, pitch, lit) {
-+        ctx.shadowColor = GLOW;
-+        ctx.shadowBlur = lit ? pitch * 0.9 : 0;
-+        let cx = x;
-+        for (const ch of text) {
-+            const glyph = FONT[ch] || FONT[' '];
-+            for (let row = 0; row < 7; row++) {
-+                for (let col = 0; col < glyph[row].length; col++) {
-+                    const on = glyph[row][col] === '1';
-+                    if (!on && !lit) continue;
-+                    if (on) dot(cx + col * pitch + pitch / 2, y + row * pitch + pitch / 2, pitch * 0.36, lit !== false);
-+                }
-+            }
-+            cx += (glyph[0].length + 1) * pitch;
-+        }
-+        ctx.shadowBlur = 0;
-+    }
-+
-+    function draw(now) {
-+        const ratio = window.devicePixelRatio || 1;
-+        const W = Math.round(canvas.clientWidth * ratio);
-+        const H = Math.round(canvas.clientHeight * ratio);
-+        if (!W || !H) return;
-+        if (canvas.width !== W || canvas.height !== H) {
-+            canvas.width = W;
-+            canvas.height = H;
-+        }
-+        ctx.clearRect(0, 0, W, H);
-+
-+        const pad = (n) => (n < 10 ? '0' : '') + n;
-+        const h = pad(now.getHours());
-+        const m = pad(now.getMinutes());
-+        const s = now.getSeconds();
-+        const colonOn = s % 2 === 0;
-+        const timeText = h + (colonOn ? ':' : ';') + m;
-+
-+        // Date on the right: weekday, day number, month (3 rows of dots).
-+        const datePitch = H * 0.04;
-+        const day = String(now.getDate());
-+        const weekday = DAYS[lang][now.getDay()];
-+        const month = MONTHS[lang][now.getMonth()];
-+        const rows = [weekday, day, month];
-+        const dateW = Math.max(...rows.map(textWidth)) * datePitch;
-+        const right = W - H * 0.04;
-+        const rowH = 8.5 * datePitch;
-+        const top = (H - rows.length * rowH + 1.5 * datePitch) / 2;
-+        rows.forEach((text, i) => {
-+            drawText(text, right - textWidth(text) * datePitch, top + i * rowH, datePitch, true);
-+        });
-+
-+        // Time on the left, as large as fits before the seconds ring.
-+        const ringR = H * 0.42;
-+        const ringD = ringR * 2 + H * 0.05;
-+        const left = H * 0.06;
-+        const gap = H * 0.2;
-+        const space = right - dateW - gap - ringD - gap - left;
-+        const cols = textWidth('88:88');
-+        const timePitch = Math.min(H * 0.105, space / cols);
-+        const timeW = cols * timePitch;
-+        // Centre the time + ring group in the room left of the date.
-+        const spare = space - timeW;
-+        const timeLeft = left + spare / 2;
-+        const timeTop = (H - 7 * timePitch) / 2;
-+        drawText(h + ':' + m, timeLeft, timeTop, timePitch, false);
-+        drawText(timeText, timeLeft, timeTop, timePitch, true);
-+
-+        // Seconds ring right after the time.
-+        const ringCx = timeLeft + timeW + gap + ringD / 2;
-+        const ringCy = H * 0.5;
-+        for (let i = 0; i < 60; i++) {
-+            const a = (i / 60) * Math.PI * 2 - Math.PI / 2;
-+            const big = i % 5 === 0;
-+            ctx.shadowColor = GLOW;
-+            ctx.shadowBlur = i <= s ? H * 0.02 : 0;
-+            dot(ringCx + Math.cos(a) * ringR, ringCy + Math.sin(a) * ringR, H * (big ? 0.022 : 0.015), i <= s);
-+        }
-+        ctx.shadowBlur = 0;
-+        const secPitch = H * 0.06;
-+        const secText = pad(s);
-+        drawText(secText, ringCx - textWidth(secText) * secPitch / 2, ringCy - 3.5 * secPitch, secPitch, true);
-+    }
-+
-+    return {
-+        element: card,
-+        // rgb: [r, g, b] (0-255), or null for the default red.
-+        setColor(rgb) {
-+            setColor(rgb || DEFAULT_RGB);
-+        },
-+        // Called twice a second by the audio screen; redraws when the second changes.
-+        update() {
-+            const now = new Date();
-+            const key = now.getSeconds() + ':' + canvas.clientWidth;
-+            if (key === lastKey) return;
-+            lastKey = key;
-+            draw(now);
-+        },
-+    };
-+}
 diff --git a/mods/features/audioMainVideo.js b/mods/features/audioMainVideo.js
 new file mode 100644
 index 0000000..2d7db50
@@ -857,10 +768,10 @@ index 0000000..5513018
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..86915a6
+index 0000000..9858b94
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,744 @@
+@@ -0,0 +1,864 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -1286,7 +1197,7 @@ index 0000000..86915a6
 +    position: absolute;
 +    left: 0;
 +    right: 0;
-+    bottom: 4.5vh;
++    bottom: 2.8vh;
 +    display: flex;
 +    align-items: center;
 +    justify-content: center;
@@ -1485,6 +1396,126 @@ index 0000000..86915a6
 +    outline-offset: 0.3vh;
 +}
 +
++/* Airport split-flap clock (audioFlapClock.js), in the .tt-audio-led card. */
++.tt-audio-led.tt-flap {
++    display: flex;
++    flex-direction: column;
++    justify-content: center;
++    height: 20vh;
++    padding: 1vh 1.6vh;
++}
++
++.tt-flap-row {
++    display: flex;
++    justify-content: center;
++    align-items: flex-end;
++}
++
++.tt-flap-row + .tt-flap-row {
++    margin-top: 1vh;
++}
++
++.tt-flap-group + .tt-flap-group {
++    margin-left: 1.8vh;
++}
++
++.tt-flap-label {
++    margin-bottom: 0.4vh;
++    font-size: 1.45vh;
++    font-weight: 700;
++    letter-spacing: 0.08em;
++    text-align: center;
++    color: rgba(255, 255, 255, 0.78);
++}
++
++.tt-flap-cards {
++    display: flex;
++}
++
++.tt-flap-card {
++    position: relative;
++    width: 6vh;
++    height: 6.9vh;
++    border-radius: 0.7vh;
++    /* Two halves, the lower one a touch darker, as on a real flap board. */
++    background: linear-gradient(180deg, #3e4043 0%, #2d2f31 49.4%, #1b1c1e 50.6%, #2a2b2d 100%);
++    box-shadow: inset 0 0 0 0.1vh rgba(255, 255, 255, 0.07), 0 0.4vh 0.8vh rgba(0, 0, 0, 0.5);
++    overflow: hidden;
++}
++
++.tt-flap-card + .tt-flap-card {
++    margin-left: 0.5vh;
++}
++
++.tt-flap-char {
++    display: block;
++    height: 100%;
++    font-family: 'Roboto Condensed', 'YouTube Sans', Roboto, Arial, sans-serif;
++    font-size: 5.4vh;
++    font-weight: 700;
++    line-height: 6.9vh;
++    text-align: center;
++    color: #f0f0f0;
++}
++
++/* Hinge across the middle, with a pin at each side. */
++.tt-flap-hinge {
++    position: absolute;
++    left: 0;
++    right: 0;
++    top: calc(50% - 0.12vh);
++    height: 0.24vh;
++    background: rgba(0, 0, 0, 0.8);
++}
++
++.tt-flap-hinge::before,
++.tt-flap-hinge::after {
++    content: '';
++    position: absolute;
++    top: -0.45vh;
++    width: 0.5vh;
++    height: 1.1vh;
++    border-radius: 0.15vh;
++    background: #5a5c5f;
++}
++
++.tt-flap-hinge::before {
++    left: 0.25vh;
++}
++
++.tt-flap-hinge::after {
++    right: 0.25vh;
++}
++
++/* Colons between hours, minutes and seconds (artwork colour, set in JS). */
++.tt-flap-colon {
++    display: flex;
++    flex-direction: column;
++    justify-content: center;
++    height: 6.9vh;
++    margin: 0 1vh;
++}
++
++.tt-flap-colon i {
++    display: block;
++    width: 0.9vh;
++    height: 0.9vh;
++    background: currentColor;
++}
++
++.tt-flap-colon i + i {
++    margin-top: 1.8vh;
++}
++
++/* Ambient mode: the same board, smaller. */
++.tt-audio-ambient .tt-audio-led.tt-flap {
++    width: 62vh;
++    height: 20vh;
++    transform: scale(0.72);
++    transform-origin: left center;
++    margin-right: -17.4vh;
++}
++
 +/* Burn-in protection (see audioBurnIn.js). */
 +.tt-audio-content,
 +.tt-audio-footer {
@@ -1607,7 +1638,7 @@ index 0000000..86915a6
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..6816e0e
+index 0000000..c53c4f6
 --- /dev/null
 +++ b/mods/features/audioOnly.js
 @@ -0,0 +1,637 @@
@@ -1621,7 +1652,7 @@ index 0000000..6816e0e
 +import { createWeather, weatherIcon, kindFor } from './audioWeather.js';
 +import { createSpectrum } from './audioSpectrum.js';
 +import { createSwissMap } from './audioMap.js';
-+import { createLedClock } from './audioLedClock.js';
++import { createFlapClock } from './audioFlapClock.js';
 +import { createBurnInGuard } from './audioBurnIn.js';
 +import { createHueTile } from './audioHueTile.js';
 +import { mainVideo, mainPlayer } from './audioMainVideo.js';
@@ -1744,8 +1775,8 @@ index 0000000..6816e0e
 +
 +    const artWrap = el('div', 'tt-audio-art-wrap');
 +
-+    // Red LED clock, then the 5-day forecast and the Swiss weather map.
-+    els.clock = createLedClock();
++    // Airport split-flap clock, then the 5-day forecast and the Swiss weather map.
++    els.clock = createFlapClock();
 +    artWrap.appendChild(els.clock.element);
 +    els.weather = createWeather(t('player.audioOnly.today'), (data) => {
 +        els.map.setCities(data.cities);
