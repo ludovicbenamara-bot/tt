@@ -162,14 +162,17 @@ index 0000000..2dfe900
 +}
 diff --git a/mods/features/audioHue.js b/mods/features/audioHue.js
 new file mode 100644
-index 0000000..7d9d1ae
+index 0000000..17a021e
 --- /dev/null
 +++ b/mods/features/audioHue.js
-@@ -0,0 +1,153 @@
+@@ -0,0 +1,179 @@
 +// Philips Hue ambiance: every time a new video starts (audio mode or not),
 +// the Hue strip is turned on in the artwork's dominant colour. The APK's
 +// local server talks to the Hue Bridge; the bridge address and key are set
 +// up once on the TV and are not part of this script.
++// While a video plays, the APK also makes the light pulse on the beat of the
++// music (beat detection runs natively, see HueRhythm.java); this script only
++// tells it when to run, every 2 s (it stops by itself without that).
 +// The audio screen shows a Hue-app style tile (on/off, brightness) that uses
 +// the `hue` controller exported here. When the user switches the strip off,
 +// it stays off (new videos don't turn it back on) until switched on again.
@@ -192,6 +195,7 @@ index 0000000..7d9d1ae
 +const REFRESH_AFTER_MS = 1500;
 +
 +let lastVideoId = null;
++let rhythmOn = false;
 +let briTimer = null;
 +const listeners = [];
 +
@@ -253,7 +257,25 @@ index 0000000..7d9d1ae
 +    return call(`?r=${r}&g=${g}&b=${b}&bri=${prefs.bri}`).then(refreshSoon, () => { });
 +}
 +
++function baseBrightness() {
++    return prefs.bri || state.bri || 180;
++}
++
++// Pulse on the beat while a video plays and the light is not switched off.
++function updateRhythm() {
++    const video = mainVideo();
++    const want = !!(video && !video.paused && !prefs.off && state.configured !== false && state.reachable);
++    if (want) {
++        rhythmOn = true;
++        call(`/rhythm?on=1&bri=${baseBrightness()}`).catch(() => { rhythmOn = false; });
++    } else if (rhythmOn) {
++        rhythmOn = false;
++        call('/rhythm?on=0').catch(() => { });
++    }
++}
++
 +function setOn(on) {
++    if (!on) rhythmOn = false;
 +    prefs.off = !on;
 +    savePrefs();
 +    state.on = on;
@@ -272,7 +294,10 @@ index 0000000..7d9d1ae
 +    savePrefs();
 +    notify();
 +    clearTimeout(briTimer);
-+    briTimer = setTimeout(sendColor, BRI_SEND_DELAY_MS);
++    briTimer = setTimeout(() => {
++        sendColor();
++        if (rhythmOn) call(`/rhythm?on=1&bri=${bri}`).catch(() => { });
++    }, BRI_SEND_DELAY_MS);
 +}
 +
 +export const hue = {
@@ -305,6 +330,7 @@ index 0000000..7d9d1ae
 +}
 +
 +function check() {
++    updateRhythm();
 +    const videoId = currentVideoId();
 +    if (!videoId || videoId === lastVideoId || !VIDEO_ID_RE.test(videoId)) return;
 +    const video = mainVideo();
