@@ -7,7 +7,6 @@ Version modifiée du script de [TizenTube](https://github.com/reisxd/TizenTube) 
 - **Bouton « Audio seulement »** dans la barre du lecteur et dans le menu ⚙ des paramètres de lecture.
 - **Écran « À l'écoute »** : grande pochette, fond flou animé aux couleurs de la pochette, titre / artiste, progression avec temps restant.
 - **Spectre LED façon Winamp** qui suit **la vraie musique** (capture Android, voir plus bas) et prend la couleur de la pochette.
-- **Horloge widget** (cadran + chiffres, date, météo du jour) translucide.
 - **Carte météo de la Suisse** (données MétéoSuisse, contour et lacs swisstopo) avec 16 villes ; la pochette, réduite, est à côté du titre.
 - **Météo sur 5 jours** (MétéoSuisse pour la localité la plus proche ; icônes en couleur, températures max / min).
 - **Télécommande** : OK = lecture / pause, ◀ ▶ = ±10 s, CH+ / CH− = morceau suivant / précédent, Retour = revenir à la vidéo.

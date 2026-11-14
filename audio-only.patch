@@ -160,133 +160,6 @@ index 0000000..2dfe900
 +        },
 +    };
 +}
-diff --git a/mods/features/audioClock.js b/mods/features/audioClock.js
-new file mode 100644
-index 0000000..fb236f6
---- /dev/null
-+++ b/mods/features/audioClock.js
-@@ -0,0 +1,121 @@
-+// Widget-style clock for the audio-only screen: a dark rounded card with
-+// minute ticks around the edge, analog hands in the middle, the hours and
-+// minutes in large digits on each side, the date above and today's weather
-+// below (same look as the Android "dual clock" widget).
-+
-+const SVG_NS = 'http://www.w3.org/2000/svg';
-+// The SVG uses the card's aspect ratio; CSS sizes the card.
-+const VIEW_W = 200;
-+const VIEW_H = 104;
-+const CX = VIEW_W / 2;
-+const CY = VIEW_H / 2;
-+const TICK_INSET = 5;
-+const ACCENT = '#3B7BFF';
-+
-+function el(tag, className, text) {
-+    const node = document.createElement(tag);
-+    if (className) node.className = className;
-+    if (text) node.textContent = text;
-+    return node;
-+}
-+
-+function svgEl(tag, attrs) {
-+    const node = document.createElementNS(SVG_NS, tag);
-+    for (const key in attrs) node.setAttribute(key, attrs[key]);
-+    return node;
-+}
-+
-+// 60 ticks pointing at the centre, ending on the card's (inset) border.
-+function buildTicks(svg) {
-+    const halfW = VIEW_W / 2 - TICK_INSET;
-+    const halfH = VIEW_H / 2 - TICK_INSET;
-+    for (let i = 0; i < 60; i++) {
-+        const a = (Math.PI * 2 * i) / 60;
-+        const dx = Math.sin(a);
-+        const dy = -Math.cos(a);
-+        const t = Math.min(Math.abs(dx) > 1e-6 ? halfW / Math.abs(dx) : Infinity,
-+            Math.abs(dy) > 1e-6 ? halfH / Math.abs(dy) : Infinity);
-+        const major = i % 5 === 0;
-+        const len = major ? 11 : 6;
-+        svg.appendChild(svgEl('line', {
-+            x1: (CX + dx * t).toFixed(2), y1: (CY + dy * t).toFixed(2),
-+            x2: (CX + dx * (t - len)).toFixed(2), y2: (CY + dy * (t - len)).toFixed(2),
-+            stroke: major ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.28)',
-+            'stroke-width': major ? 1.4 : 0.9,
-+            'stroke-linecap': 'round',
-+        }));
-+    }
-+}
-+
-+function hand(length, width, color, tail) {
-+    return svgEl('line', {
-+        x1: CX, y1: CY + (tail || 0), x2: CX, y2: CY - length,
-+        stroke: color, 'stroke-width': width, 'stroke-linecap': 'round',
-+    });
-+}
-+
-+export function createClock() {
-+    const card = el('div', 'tt-audio-clock');
-+
-+    const svg = svgEl('svg', { viewBox: `0 0 ${VIEW_W} ${VIEW_H}`, class: 'tt-audio-clock-face' });
-+    buildTicks(svg);
-+    const hourHand = hand(17, 3.4, '#F2F2F2');
-+    const minuteHand = hand(27, 3, '#F2F2F2');
-+    const secondHand = hand(33, 1, ACCENT, 7);
-+    svg.appendChild(hourHand);
-+    svg.appendChild(minuteHand);
-+    svg.appendChild(secondHand);
-+    svg.appendChild(svgEl('circle', { cx: CX, cy: CY, r: 3.4, fill: '#F2F2F2' }));
-+    svg.appendChild(svgEl('circle', { cx: CX, cy: CY, r: 1.8, fill: ACCENT }));
-+    card.appendChild(svg);
-+
-+    const date = el('div', 'tt-audio-clock-date');
-+    const dayMonth = el('span');
-+    const weekday = el('span', 'tt-audio-clock-weekday');
-+    date.appendChild(dayMonth);
-+    date.appendChild(weekday);
-+    card.appendChild(date);
-+
-+    const hours = el('div', 'tt-audio-clock-digits tt-audio-clock-hours');
-+    const minutes = el('div', 'tt-audio-clock-digits tt-audio-clock-minutes');
-+    card.appendChild(hours);
-+    card.appendChild(minutes);
-+
-+    const weather = el('div', 'tt-audio-clock-weather');
-+    weather.style.display = 'none';
-+    card.appendChild(weather);
-+
-+    const pad = (n) => (n < 10 ? '0' : '') + n;
-+    const lang = navigator.language || undefined;
-+
-+    function update() {
-+        const now = new Date();
-+        const h = now.getHours();
-+        const m = now.getMinutes();
-+        const s = now.getSeconds();
-+        hours.textContent = pad(h);
-+        minutes.textContent = pad(m);
-+        hourHand.setAttribute('transform', `rotate(${((h % 12) + m / 60) * 30} ${CX} ${CY})`);
-+        minuteHand.setAttribute('transform', `rotate(${(m + s / 60) * 6} ${CX} ${CY})`);
-+        secondHand.setAttribute('transform', `rotate(${s * 6} ${CX} ${CY})`);
-+        try {
-+            dayMonth.textContent = now.toLocaleDateString(lang, { day: 'numeric', month: 'short' }) + ' ';
-+            weekday.textContent = now.toLocaleDateString(lang, { weekday: 'short' });
-+        } catch (e) {
-+            dayMonth.textContent = pad(now.getDate()) + '/' + pad(now.getMonth() + 1) + ' ';
-+            weekday.textContent = '';
-+        }
-+    }
-+
-+    // icon: an SVG element, label: e.g. "Couvert", temp: e.g. 10.
-+    function setWeather(icon, label, temp) {
-+        while (weather.firstChild) weather.removeChild(weather.firstChild);
-+        icon.setAttribute('class', 'tt-audio-clock-weather-icon');
-+        weather.appendChild(icon);
-+        weather.appendChild(el('span', '', `${label} ${temp}°`));
-+        weather.style.display = '';
-+    }
-+
-+    update();
-+    return { element: card, update, setWeather };
-+}
 diff --git a/mods/features/audioMap.js b/mods/features/audioMap.js
 new file mode 100644
 index 0000000..5513018
@@ -388,10 +261,10 @@ index 0000000..5513018
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..9eea8c2
+index 0000000..721669b
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,619 @@
+@@ -0,0 +1,629 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -672,13 +545,18 @@ index 0000000..9eea8c2
 +    max-width: 52vw;
 +}
 +
-+/* 5-day weather row above the title. */
++/* 5-day forecast card above the map, styled like the MeteoSwiss map labels. */
 +.tt-audio-weather {
 +    display: flex;
 +    align-items: stretch;
-+    /* The five days share the full width of the details column. */
-+    gap: 1.4vh;
-+    margin-bottom: 6vh;
++    gap: 1vh;
++    box-sizing: border-box;
++    width: 66vh;
++    margin-bottom: 2.5vh;
++    padding: 1.4vh;
++    border-radius: 2.2vh;
++    background: rgba(34, 40, 48, 0.72);
++    box-shadow: 0 2vh 5vh rgba(0, 0, 0, 0.35);
 +}
 +
 +.tt-audio-weather-day {
@@ -687,38 +565,43 @@ index 0000000..9eea8c2
 +    align-items: center;
 +    flex: 1 1 0;
 +    min-width: 0;
-+    padding: 1.6vh 0 1.4vh;
-+    border-radius: 2vh;
-+    background: rgba(255, 255, 255, 0.08);
++    padding: 1vh 0 1.1vh;
++    border-radius: 1.4vh;
++    background: #2f6be0;
++    box-shadow: 0 0.4vh 1vh rgba(0, 0, 0, 0.3);
 +}
 +
 +.tt-audio-weather-day:first-child {
-+    background: rgba(255, 255, 255, 0.16);
++    background: #4a82f0;
 +}
 +
 +.tt-audio-weather-label {
-+    font-size: 2.3vh;
++    font-size: 1.9vh;
 +    font-weight: 600;
-+    color: rgba(255, 255, 255, 0.75);
 +}
 +
 +.tt-audio-weather-icon {
-+    width: 8.5vh;
-+    height: 8.5vh;
-+    margin: 0.8vh 0;
-+    filter: drop-shadow(0 0.4vh 0.8vh rgba(0, 0, 0, 0.25));
++    width: 7vh;
++    height: 7vh;
++    margin: 0.5vh 0;
++    filter: drop-shadow(0 0.4vh 0.8vh rgba(0, 0, 0, 0.3));
 +}
 +
 +.tt-audio-weather-temps {
-+    font-size: 2.5vh;
++    display: flex;
++    font-size: 1.9vh;
 +    font-weight: 700;
 +    font-variant-numeric: tabular-nums;
 +}
 +
-+.tt-audio-weather-min {
-+    margin-left: 0.6vh;
-+    font-weight: 500;
-+    color: rgba(255, 255, 255, 0.55);
++.tt-audio-weather-temps span {
++    padding: 0.1vh 0.6vh;
++    border-radius: 0.5vh;
++    background: rgba(10, 30, 90, 0.45);
++}
++
++.tt-audio-weather-temps span + span {
++    margin-left: 0.4vh;
 +}
 +
 +
@@ -1007,16 +890,16 @@ index 0000000..9eea8c2
 +    .tt-audio-btn { width: 9vh; height: 9vh; margin: 0 2vh; }
 +    .tt-audio-btn-main { width: 11vh; height: 11vh; }
 +    .tt-audio-hint { display: none; }
-+    .tt-audio-weather { gap: 1.5vw; margin-bottom: 2.5vh; }
++    .tt-audio-weather { width: 88vw; gap: 1.5vw; margin-bottom: 2vh; }
 +    .tt-audio-weather-icon { width: 9vw; height: 9vw; }
 +    .tt-audio-clock { font-size: calc(80vw / 52); margin: 0 auto 2vh; }
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..cf3391f
+index 0000000..96481a9
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,575 @@
+@@ -0,0 +1,563 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode.
@@ -1024,7 +907,6 @@ index 0000000..cf3391f
 +import { t } from 'i18next';
 +import css from './audioOnly.css';
 +import { createWeather, weatherIcon, kindFor } from './audioWeather.js';
-+import { createClock } from './audioClock.js';
 +import { createSpectrum } from './audioSpectrum.js';
 +import { createSwissMap } from './audioMap.js';
 +import { createBurnInGuard } from './audioBurnIn.js';
@@ -1142,9 +1024,11 @@ index 0000000..cf3391f
 +
 +    const artWrap = el('div', 'tt-audio-art-wrap');
 +
-+    // Widget-style clock above the Swiss weather map.
-+    els.clock = createClock();
-+    artWrap.appendChild(els.clock.element);
++    // 5-day forecast above the Swiss weather map, in the same card style.
++    els.weather = createWeather(t('player.audioOnly.today'), (data) => {
++        els.map.setCities(data.cities);
++    });
++    artWrap.appendChild(els.weather.element);
 +    els.map = createSwissMap();
 +    artWrap.appendChild(els.map.element);
 +    content.appendChild(artWrap);
@@ -1153,14 +1037,6 @@ index 0000000..cf3391f
 +    els.art = el('div', 'tt-audio-art');
 +
 +    const info = el('div', 'tt-audio-info');
-+    els.weather = createWeather(t('player.audioOnly.today'), (data) => {
-+        // Today's conditions also go under the clock.
-+        const today = data.days[0];
-+        const kind = kindFor(today.code);
-+        els.clock.setWeather(weatherIcon(kind), t('player.audioOnly.conditions.' + kind), today.max);
-+        els.map.setCities(data.cities);
-+    });
-+    info.appendChild(els.weather.element);
 +
 +    els.title = el('div', 'tt-audio-title');
 +    els.author = el('div', 'tt-audio-author');
@@ -1234,10 +1110,6 @@ index 0000000..cf3391f
 +    els.burnIn = createBurnInGuard(overlay, content, footer);
 +
 +    document.body.appendChild(overlay);
-+}
-+
-+function updateClock() {
-+    els.clock.update();
 +}
 +
 +function setPlayIcon(paused) {
@@ -1366,7 +1238,6 @@ index 0000000..cf3391f
 +        return;
 +    }
 +    missingTicks = 0;
-+    updateClock();
 +    els.weather.refresh();
 +    updateMetadata();
 +    updateProgress();
@@ -1860,10 +1731,10 @@ index 0000000..40994a5
 +}
 diff --git a/mods/features/audioWeather.js b/mods/features/audioWeather.js
 new file mode 100644
-index 0000000..538ba3f
+index 0000000..e6384e6
 --- /dev/null
 +++ b/mods/features/audioWeather.js
-@@ -0,0 +1,302 @@
+@@ -0,0 +1,303 @@
 +// 5-day weather row for the audio-only screen.
 +// YouTube TV's CSP only lets the page reach Google/YouTube hosts, so the
 +// forecast is relayed through a public Google Sheet: its A1 cell runs
@@ -2135,8 +2006,9 @@ index 0000000..538ba3f
 +        item.appendChild(el('div', 'tt-audio-weather-label', dayLabel(day.date, i, todayLabel)));
 +        item.appendChild(weatherIcon(kindFor(day.code)));
 +        const temps = el('div', 'tt-audio-weather-temps');
-+        temps.appendChild(el('span', 'tt-audio-weather-max', day.max + '°'));
++        // min | max, like the MeteoSwiss map labels.
 +        temps.appendChild(el('span', 'tt-audio-weather-min', day.min + '°'));
++        temps.appendChild(el('span', 'tt-audio-weather-max', day.max + '°'));
 +        item.appendChild(temps);
 +        container.appendChild(item);
 +    });
