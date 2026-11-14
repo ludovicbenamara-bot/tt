@@ -725,10 +725,10 @@ index 0000000..5513018
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..2b6fbf0
+index 0000000..cb1a19e
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,705 @@
+@@ -0,0 +1,703 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -748,18 +748,16 @@ index 0000000..2b6fbf0
 +    -webkit-font-smoothing: antialiased;
 +}
 +
-+/* Animated, heavily blurred artwork behind everything. The layer is blurred
-+   at a small size and scaled up, which is far cheaper for TV GPUs. */
++/* Animated, blurred artwork behind everything: a 48x27 canvas stretched over
++   the screen (so the blur costs nothing); only its transform is animated. */
 +.tt-audio-backdrop {
 +    position: absolute;
 +    top: 30%;
 +    left: 30%;
 +    width: 40%;
 +    height: 40%;
-+    background-size: cover;
-+    background-position: center;
-+    filter: blur(24px) saturate(1.8) brightness(0.75);
 +    opacity: 0.95;
++    will-change: transform;
 +    animation: tt-audio-drift 28s ease-in-out infinite alternate;
 +}
 +
@@ -1436,10 +1434,10 @@ index 0000000..2b6fbf0
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..bdc8632
+index 0000000..99be51c
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,620 @@
+@@ -0,0 +1,652 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode, Down = Hue tile.
@@ -1562,8 +1560,14 @@ index 0000000..bdc8632
 +    overlay.style.display = 'none';
 +
 +    // Two drifting copies of the blurred artwork, like Apple Music's animated background.
-+    els.backdrop = el('div', 'tt-audio-backdrop');
-+    els.backdrop2 = el('div', 'tt-audio-backdrop tt-audio-backdrop-2');
++    // Tiny canvases: stretched over the screen they look blurred for free,
++    // where a CSS blur filter on an animated layer costs the TV a lot of CPU/GPU.
++    els.backdrop = el('canvas', 'tt-audio-backdrop');
++    els.backdrop2 = el('canvas', 'tt-audio-backdrop tt-audio-backdrop-2');
++    for (const c of [els.backdrop, els.backdrop2]) {
++        c.width = BACKDROP_W;
++        c.height = BACKDROP_H;
++    }
 +    overlay.appendChild(els.backdrop);
 +    overlay.appendChild(els.backdrop2);
 +    overlay.appendChild(el('div', 'tt-audio-shade'));
@@ -1675,6 +1679,34 @@ index 0000000..bdc8632
 +    }
 +}
 +
++const BACKDROP_W = 48;
++const BACKDROP_H = 27;
++let backdropRequest = 0;
++
++// Draws the artwork once, small and softened, on both backdrop canvases.
++function drawBackdrop(url) {
++    const request = ++backdropRequest;
++    const paint = (img) => {
++        if (request !== backdropRequest) return;
++        for (const c of [els.backdrop, els.backdrop2]) {
++            const ctx = c.getContext('2d');
++            ctx.clearRect(0, 0, BACKDROP_W, BACKDROP_H);
++            if (!img) continue;
++            ctx.filter = 'blur(1.5px) saturate(1.8) brightness(0.75)';
++            // Cover the canvas, cropping the letterbox bars of 4:3 thumbnails.
++            const scale = Math.max(BACKDROP_W / img.naturalWidth, BACKDROP_H / (img.naturalHeight * 0.75));
++            const w = img.naturalWidth * scale;
++            const h = img.naturalHeight * scale;
++            ctx.drawImage(img, (BACKDROP_W - w) / 2, (BACKDROP_H - h) / 2, w, h);
++            ctx.filter = 'none';
++        }
++    };
++    if (!url) return paint(null);
++    const img = new Image();
++    img.onload = () => paint(img);
++    img.src = url;
++}
++
 +// Prefer the HD thumbnail (16:9, no letterbox); not every video has one.
 +function setArtwork(videoId) {
 +    const hq = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
@@ -1682,8 +1714,7 @@ index 0000000..bdc8632
 +    const apply = (url, letterboxed) => {
 +        els.art.style.backgroundImage = `url("${url}")`;
 +        els.art.classList.toggle('tt-audio-art-letterboxed', letterboxed);
-+        els.backdrop.style.backgroundImage = `url("${url}")`;
-+        els.backdrop2.style.backgroundImage = `url("${url}")`;
++        drawBackdrop(url);
 +    };
 +    apply(hq, true);
 +    const probe = new Image();
@@ -1758,8 +1789,7 @@ index 0000000..bdc8632
 +        els.spectrum.setColorFromImage(`https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, (rgb) => els.clock.setColor(rgb));
 +    } else {
 +        els.art.style.removeProperty('background-image');
-+        els.backdrop.style.removeProperty('background-image');
-+        els.backdrop2.style.removeProperty('background-image');
++        drawBackdrop(null);
 +    }
 +}
 +
