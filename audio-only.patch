@@ -1459,10 +1459,10 @@ index 0000000..b091574
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..40ef313
+index 0000000..bcdd623
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,652 @@
+@@ -0,0 +1,659 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode, Down = Hue tile.
@@ -1584,7 +1584,7 @@ index 0000000..40ef313
 +    overlay = el('div', 'tt-audio');
 +    overlay.style.display = 'none';
 +
-+    // Two drifting copies of the blurred artwork, like Apple Music's animated background.
++    // Two still copies of the blurred artwork, like Apple Music's background.
 +    // Tiny canvases: stretched over the screen they look blurred for free,
 +    // where a CSS blur filter on an animated layer costs the TV a lot of CPU/GPU.
 +    els.backdrop = el('canvas', 'tt-audio-backdrop');
@@ -1973,9 +1973,16 @@ index 0000000..40ef313
 +    setTimeout(() => button.classList.remove('tt-audio-btn-pressed'), 200);
 +}
 +
++function isWatching() {
++    if (String(location.hash).indexOf('/watch') === -1) return false;
++    const video = getVideo();
++    return !!(video && currentVideoId());
++}
++
 +function keyHandler(evt) {
-+    // Red key: direct switch, from the video or from the audio screen.
-+    if (RED_KEYS.indexOf(evt.keyCode) !== -1 && (window.isAudioOnly || getVideo())) {
++    // Red key: direct switch, from a playing video or from the audio screen.
++    // Only on the watch page: browse pages keep a hidden <video> element too.
++    if (RED_KEYS.indexOf(evt.keyCode) !== -1 && (window.isAudioOnly || isWatching())) {
 +        if (evt.type === 'keydown') {
 +            if (window.isAudioOnly) disableAudioOnly('red key');
 +            else enableAudioOnly();
