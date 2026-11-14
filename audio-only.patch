@@ -748,10 +748,10 @@ index 0000000..5513018
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..9656bef
+index 0000000..b091574
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,706 @@
+@@ -0,0 +1,705 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -781,8 +781,8 @@ index 0000000..9656bef
 +    height: 40%;
 +    opacity: 0.95;
 +    will-change: transform;
-+    /* Drifts slowly, moved once a second by the script (see driftBackdrop):
-+       a CSS animation here kept the TV recompositing the screen at 60 fps. */
++    /* Still: the screen has no decorative animation (user's choice, and the
++       TV recomposites everything for any moving layer). */
 +    transform: translate(-10%, -8%) scale(3.4);
 +}
 +
@@ -857,11 +857,6 @@ index 0000000..9656bef
 +/* hqdefault thumbnails are 4:3 with letterbox bars; zoom them off. */
 +.tt-audio-art-letterboxed {
 +    background-size: auto 134%;
-+}
-+
-+.tt-audio-paused .tt-audio-art {
-+    transform: scale(0.86);
-+    box-shadow: 0 2vh 5vh rgba(0, 0, 0, 0.4);
 +}
 +
 +.tt-audio-title-row {
@@ -1202,10 +1197,6 @@ index 0000000..9656bef
 +    outline: none;
 +}
 +
-+@keyframes tt-audio-blink {
-+    50% { opacity: 0.25; }
-+}
-+
 +/* Philips Hue tile, drawn like a light in the Hue app. */
 +.tt-hue {
 +    position: relative;
@@ -1458,12 +1449,20 @@ index 0000000..9656bef
 +    .tt-audio-weather-icon { width: 9vw; height: 9vw; }
 +    .tt-audio-led { width: 88vw; height: calc(88vw * 17 / 62); }
 +}
++
++/* No animations anywhere on the audio screen (only the spectrum and the clock
++   change, as data). Changes of state show at once. */
++.tt-audio,
++.tt-audio * {
++    transition: none !important;
++    animation: none !important;
++}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..149963e
+index 0000000..40ef313
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,666 @@
+@@ -0,0 +1,652 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode, Down = Hue tile.
@@ -1837,22 +1836,8 @@ index 0000000..149963e
 +    els.spectrum.setPaused(video.paused);
 +}
 +
-+// Slow drift of the two blurred backdrops (once a second, no CSS animation).
-+function driftBackdrop() {
-+    const t = Date.now() / 1000;
-+    const a = (Math.sin(t * Math.PI / 28) + 1) / 2;
-+    const b = (Math.sin(t * Math.PI / 36) + 1) / 2;
-+    els.backdrop.style.transform =
-+        `translate(${-10 + 20 * a}%, ${-8 + 16 * a}%) scale(${3.4 + 0.5 * a}) rotate(${8 * a}deg)`;
-+    els.backdrop2.style.transform =
-+        `translate(${12 - 24 * b}%, ${10 - 20 * b}%) scale(${3.9 - 0.5 * b}) rotate(${180 + 20 * b}deg)`;
-+}
-+
-+let driftTicks = 0;
-+
 +function tick() {
 +    els.burnIn.tick();
-+    if (++driftTicks % 2 === 0) driftBackdrop();
 +    els.clock.update();
 +    // Leave audio mode on its own when the player is closed.
 +    const player = getPlayer();
