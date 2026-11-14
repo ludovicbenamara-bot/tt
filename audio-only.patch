@@ -725,10 +725,10 @@ index 0000000..5513018
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..cb1a19e
+index 0000000..9dc049f
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,703 @@
+@@ -0,0 +1,708 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -1432,12 +1432,17 @@ index 0000000..cb1a19e
 +    .tt-audio-weather-icon { width: 9vw; height: 9vw; }
 +    .tt-audio-led { width: 88vw; height: calc(88vw * 17 / 62); }
 +}
++
++/* TEMPORARY performance measurement. */
++.tt-perf-noanim .tt-audio-backdrop { animation: none !important; }
++.tt-perf-nofill .tt-audio-fill { transition: none !important; }
++.tt-perf-hide .tt-audio-content, .tt-perf-hide .tt-audio-footer { display: none !important; }
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..99be51c
+index 0000000..941158c
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,652 @@
+@@ -0,0 +1,657 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode, Down = Hue tile.
@@ -2055,6 +2060,11 @@ index 0000000..99be51c
 +    els.burnIn.reset();
 +    els.spectrum.start();
 +    tickInterval = setInterval(tick, 500);
++    // TEMPORARY performance measurement: switch parts off every 20 s.
++    setTimeout(() => els.spectrum.stop(), 20000);
++    setTimeout(() => overlay.classList.add('tt-perf-noanim'), 40000);
++    setTimeout(() => { clearInterval(tickInterval); overlay.classList.add('tt-perf-nofill'); }, 60000);
++    setTimeout(() => overlay.classList.add('tt-perf-hide'), 80000);
 +}
 +
 +function disableAudioOnly(reason) {
