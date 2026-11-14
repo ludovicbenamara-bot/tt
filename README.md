@@ -8,6 +8,8 @@ Version modifiée du script de [TizenTube](https://github.com/reisxd/TizenTube) 
 - **Écran « À l'écoute »** : grande pochette, fond flou animé aux couleurs de la pochette, titre / artiste, progression avec temps restant.
 - **Spectre LED façon Winamp** qui suit **la vraie musique** (capture Android, voir plus bas) et prend la couleur de la pochette.
 - **Carte météo de la Suisse** (données MétéoSuisse, contour et lacs swisstopo) avec 16 villes ; la pochette, réduite, est à côté du titre.
+- **Horloge LED à points** (heure, anneau des secondes, date) aux couleurs de la pochette.
+- **Ambiance Philips Hue** : à chaque vidéo, une bande Hue s'allume dans la couleur de la pochette (via le pont Hue local).
 - **Météo sur 5 jours** (MétéoSuisse pour la localité la plus proche ; icônes en couleur, températures max / min).
 - **Télécommande** : OK = lecture / pause, ◀ ▶ = ±10 s, CH+ / CH− = morceau suivant / précédent, Retour = revenir à la vidéo.
 - **Protection anti-marquage** de l'écran :
@@ -23,7 +25,7 @@ Version modifiée du script de [TizenTube](https://github.com/reisxd/TizenTube) 
 |---|---|
 | `u.js` | Script compilé chargé par l'application (via jsDelivr). |
 | `audio-only.patch` | Code source des modifications du script, à appliquer sur TizenTube. |
-| `native-src.zip` | Code source Java ajouté à l'APK (capture du son réel, météo MétéoSuisse), avec `BUILD.md`. |
+| `native-src.zip` | Code source Java ajouté à l'APK (capture du son réel, météo MétéoSuisse, Philips Hue), avec `BUILD.md`. |
 | `LICENSE` | Licence GPL-3.0 (identique au projet d'origine). |
 
 ## Reconstruire depuis les sources
