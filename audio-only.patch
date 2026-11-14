@@ -162,18 +162,17 @@ index 0000000..2dfe900
 +}
 diff --git a/mods/features/audioLedClock.js b/mods/features/audioLedClock.js
 new file mode 100644
-index 0000000..f5cdef1
+index 0000000..7a7a925
 --- /dev/null
 +++ b/mods/features/audioLedClock.js
-@@ -0,0 +1,177 @@
-+// Red LED dot-matrix clock, like a station / studio wall clock: a ring of 60
-+// dots lit up to the current second, the time in large dot digits, the
-+// seconds below, and the date (day number, weekday, month) on the right.
+@@ -0,0 +1,195 @@
++// LED dot-matrix clock, like a station / studio wall clock: the time in large
++// dot digits on the left, then a ring of 60 dots lit up to the current second
++// (with the seconds inside), and the date (weekday, day, month) on the right.
++// The LEDs take the artwork's colour (red until one is set).
 +// Drawn on a canvas: one dot per pixel of a 5x7 font.
 +
-+const LIT = '#ff3b2a';
-+const UNLIT = 'rgba(255, 59, 42, 0.12)';
-+const GLOW = 'rgba(255, 59, 42, 0.55)';
++const DEFAULT_RGB = [255, 59, 42];
 +
 +// 5x7 font, one string per row ('1' = dot on).
 +const FONT = {
@@ -243,6 +242,18 @@ index 0000000..f5cdef1
 +    const ctx = canvas.getContext('2d');
 +    const lang = String(navigator.language || 'fr').toLowerCase().startsWith('fr') ? 'fr' : 'en';
 +    let lastKey = '';
++    let LIT;
++    let UNLIT;
++    let GLOW;
++
++    function setColor(rgb) {
++        const [r, g, b] = rgb;
++        LIT = `rgb(${r}, ${g}, ${b})`;
++        UNLIT = `rgba(${r}, ${g}, ${b}, 0.12)`;
++        GLOW = `rgba(${r}, ${g}, ${b}, 0.55)`;
++        lastKey = '';
++    }
++    setColor(DEFAULT_RGB);
 +
 +    function dot(x, y, r, on) {
 +        ctx.beginPath();
@@ -288,23 +299,6 @@ index 0000000..f5cdef1
 +        const colonOn = s % 2 === 0;
 +        const timeText = h + (colonOn ? ':' : ';') + m;
 +
-+        // Seconds ring on the left, the full height of the card.
-+        const ringR = H * 0.42;
-+        const ringCx = H * 0.5;
-+        const ringCy = H * 0.5;
-+        for (let i = 0; i < 60; i++) {
-+            const a = (i / 60) * Math.PI * 2 - Math.PI / 2;
-+            const big = i % 5 === 0;
-+            ctx.shadowColor = GLOW;
-+            ctx.shadowBlur = i <= s ? H * 0.02 : 0;
-+            dot(ringCx + Math.cos(a) * ringR, ringCy + Math.sin(a) * ringR, H * (big ? 0.022 : 0.015), i <= s);
-+        }
-+        ctx.shadowBlur = 0;
-+        // Seconds inside the ring.
-+        const secPitch = H * 0.06;
-+        const secText = pad(s);
-+        drawText(secText, ringCx - textWidth(secText) * secPitch / 2, ringCy - 3.5 * secPitch, secPitch, true);
-+
 +        // Date on the right: weekday, day number, month (3 rows of dots).
 +        const datePitch = H * 0.04;
 +        const day = String(now.getDate());
@@ -319,20 +313,44 @@ index 0000000..f5cdef1
 +            drawText(text, right - textWidth(text) * datePitch, top + i * rowH, datePitch, true);
 +        });
 +
-+        // Time, as large as fits between the ring and the date.
-+        const ringEnd = ringCx + ringR + H * 0.08;
-+        // Keep a clear gap before the date column.
-+        const space = right - dateW - H * 0.3 - ringEnd;
++        // Time on the left, as large as fits before the seconds ring.
++        const ringR = H * 0.42;
++        const ringD = ringR * 2 + H * 0.05;
++        const left = H * 0.06;
++        const gap = H * 0.2;
++        const space = right - dateW - gap - ringD - gap - left;
 +        const cols = textWidth('88:88');
 +        const timePitch = Math.min(H * 0.105, space / cols);
-+        const timeLeft = ringEnd + (space - cols * timePitch) / 2;
++        const timeW = cols * timePitch;
++        // Centre the time + ring group in the room left of the date.
++        const spare = space - timeW;
++        const timeLeft = left + spare / 2;
 +        const timeTop = (H - 7 * timePitch) / 2;
 +        drawText(h + ':' + m, timeLeft, timeTop, timePitch, false);
 +        drawText(timeText, timeLeft, timeTop, timePitch, true);
++
++        // Seconds ring right after the time.
++        const ringCx = timeLeft + timeW + gap + ringD / 2;
++        const ringCy = H * 0.5;
++        for (let i = 0; i < 60; i++) {
++            const a = (i / 60) * Math.PI * 2 - Math.PI / 2;
++            const big = i % 5 === 0;
++            ctx.shadowColor = GLOW;
++            ctx.shadowBlur = i <= s ? H * 0.02 : 0;
++            dot(ringCx + Math.cos(a) * ringR, ringCy + Math.sin(a) * ringR, H * (big ? 0.022 : 0.015), i <= s);
++        }
++        ctx.shadowBlur = 0;
++        const secPitch = H * 0.06;
++        const secText = pad(s);
++        drawText(secText, ringCx - textWidth(secText) * secPitch / 2, ringCy - 3.5 * secPitch, secPitch, true);
 +    }
 +
 +    return {
 +        element: card,
++        // rgb: [r, g, b] (0-255), or null for the default red.
++        setColor(rgb) {
++            setColor(rgb || DEFAULT_RGB);
++        },
 +        // Called twice a second by the audio screen; redraws when the second changes.
 +        update() {
 +            const now = new Date();
@@ -1018,7 +1036,7 @@ index 0000000..7144239
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..f16fa60
+index 0000000..c621afd
 --- /dev/null
 +++ b/mods/features/audioOnly.js
 @@ -0,0 +1,566 @@
@@ -1326,7 +1344,7 @@ index 0000000..f16fa60
 +    if (videoId && VIDEO_ID_RE.test(videoId)) {
 +        setArtwork(videoId);
 +        // Small thumbnail: enough to find the colour, quick to load.
-+        els.spectrum.setColorFromImage(`https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`);
++        els.spectrum.setColorFromImage(`https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, (rgb) => els.clock.setColor(rgb));
 +    } else {
 +        els.art.style.removeProperty('background-image');
 +        els.backdrop.style.removeProperty('background-image');
@@ -1590,10 +1608,10 @@ index 0000000..f16fa60
 +export { enableAudioOnly, disableAudioOnly, toggleAudioOnly };
 diff --git a/mods/features/audioSpectrum.js b/mods/features/audioSpectrum.js
 new file mode 100644
-index 0000000..40994a5
+index 0000000..05ef315
 --- /dev/null
 +++ b/mods/features/audioSpectrum.js
-@@ -0,0 +1,260 @@
+@@ -0,0 +1,263 @@
 +// Winamp-style LED spectrum analyser for the audio-only screen: columns of
 +// LED segments on a dark dot matrix, white peak caps that hold then fall, and
 +// a blue dotted baseline. The segments take the artwork's dominant colour
@@ -1833,7 +1851,8 @@ index 0000000..40994a5
 +            paused = value;
 +        },
 +        // Take the LED colour from an image that sends CORS headers.
-+        setColorFromImage(url) {
++        // onColor(rgb | null): the LED colour found, for other widgets.
++        setColorFromImage(url, onColor) {
 +            const request = ++colorRequest;
 +            const img = new Image();
 +            img.crossOrigin = 'anonymous';
@@ -1845,9 +1864,11 @@ index 0000000..40994a5
 +                } catch (e) { }
 +                if (hue === null) {
 +                    setGradient(COLORS.low, COLORS.high);
++                    if (onColor) onColor(null);
 +                } else {
 +                    // Deep at the bottom, bright at the top, like the green original.
 +                    setGradient(hslToRgb(hue, 0.72, 0.42), hslToRgb(hue, 0.85, 0.66));
++                    if (onColor) onColor(hslToRgb(hue, 0.9, 0.58));
 +                }
 +            };
 +            img.src = url;
