@@ -754,10 +754,10 @@ index 0000000..5513018
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..5ce52f3
+index 0000000..c06425a
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,1024 @@
+@@ -0,0 +1,1025 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -1668,27 +1668,28 @@ index 0000000..5ce52f3
 +   with gradients only: a real backdrop blur would cost the TV a lot of CPU.
 +   ------------------------------------------------------------------------ */
 +
-+/* Clock: bigger flaps straight on the background, no card behind. */
++/* Clock: flaps as tall as the forecast tiles (14.9vh, same corners) and the
++   row as wide as the forecast, straight on the background. */
 +.tt-audio-led.tt-flap {
-+    height: 15vh;
++    height: auto;
 +    padding: 0;
 +    background: none;
 +    box-shadow: none;
 +}
 +
 +.tt-flap-card {
-+    width: 8.4vh;
-+    height: 10.6vh;
-+    border-radius: 1vh;
++    width: 8.8vh;
++    height: 14.9vh;
++    border-radius: 1.4vh;
 +}
 +
 +.tt-flap-char {
-+    font-size: 8.6vh;
-+    line-height: 10.6vh;
++    font-size: 11.5vh;
++    line-height: 14.9vh;
 +}
 +
 +.tt-flap-colon {
-+    height: 10.6vh;
++    height: 14.9vh;
 +    margin: 0 1.3vh;
 +}
 +
