@@ -160,6 +160,189 @@ index 0000000..2dfe900
 +        },
 +    };
 +}
+diff --git a/mods/features/audioLedClock.js b/mods/features/audioLedClock.js
+new file mode 100644
+index 0000000..f5cdef1
+--- /dev/null
++++ b/mods/features/audioLedClock.js
+@@ -0,0 +1,177 @@
++// Red LED dot-matrix clock, like a station / studio wall clock: a ring of 60
++// dots lit up to the current second, the time in large dot digits, the
++// seconds below, and the date (day number, weekday, month) on the right.
++// Drawn on a canvas: one dot per pixel of a 5x7 font.
++
++const LIT = '#ff3b2a';
++const UNLIT = 'rgba(255, 59, 42, 0.12)';
++const GLOW = 'rgba(255, 59, 42, 0.55)';
++
++// 5x7 font, one string per row ('1' = dot on).
++const FONT = {
++    '0': ['01110', '10001', '10011', '10101', '11001', '10001', '01110'],
++    '1': ['00100', '01100', '00100', '00100', '00100', '00100', '01110'],
++    '2': ['01110', '10001', '00001', '00010', '00100', '01000', '11111'],
++    '3': ['11111', '00010', '00100', '00010', '00001', '10001', '01110'],
++    '4': ['00010', '00110', '01010', '10010', '11111', '00010', '00010'],
++    '5': ['11111', '10000', '11110', '00001', '00001', '10001', '01110'],
++    '6': ['00110', '01000', '10000', '11110', '10001', '10001', '01110'],
++    '7': ['11111', '00001', '00010', '00100', '01000', '01000', '01000'],
++    '8': ['01110', '10001', '10001', '01110', '10001', '10001', '01110'],
++    '9': ['01110', '10001', '10001', '01111', '00001', '00010', '01100'],
++    'A': ['01110', '10001', '10001', '11111', '10001', '10001', '10001'],
++    'B': ['11110', '10001', '10001', '11110', '10001', '10001', '11110'],
++    'C': ['01110', '10001', '10000', '10000', '10000', '10001', '01110'],
++    'D': ['11110', '10001', '10001', '10001', '10001', '10001', '11110'],
++    'E': ['11111', '10000', '10000', '11110', '10000', '10000', '11111'],
++    'F': ['11111', '10000', '10000', '11110', '10000', '10000', '10000'],
++    'G': ['01110', '10001', '10000', '10111', '10001', '10001', '01111'],
++    'H': ['10001', '10001', '10001', '11111', '10001', '10001', '10001'],
++    'I': ['01110', '00100', '00100', '00100', '00100', '00100', '01110'],
++    'J': ['00111', '00010', '00010', '00010', '00010', '10010', '01100'],
++    'K': ['10001', '10010', '10100', '11000', '10100', '10010', '10001'],
++    'L': ['10000', '10000', '10000', '10000', '10000', '10000', '11111'],
++    'M': ['10001', '11011', '10101', '10101', '10001', '10001', '10001'],
++    'N': ['10001', '10001', '11001', '10101', '10011', '10001', '10001'],
++    'O': ['01110', '10001', '10001', '10001', '10001', '10001', '01110'],
++    'P': ['11110', '10001', '10001', '11110', '10000', '10000', '10000'],
++    'Q': ['01110', '10001', '10001', '10001', '10101', '10010', '01101'],
++    'R': ['11110', '10001', '10001', '11110', '10100', '10010', '10001'],
++    'S': ['01111', '10000', '10000', '01110', '00001', '00001', '11110'],
++    'T': ['11111', '00100', '00100', '00100', '00100', '00100', '00100'],
++    'U': ['10001', '10001', '10001', '10001', '10001', '10001', '01110'],
++    'V': ['10001', '10001', '10001', '10001', '10001', '01010', '00100'],
++    'W': ['10001', '10001', '10001', '10101', '10101', '10101', '01010'],
++    'X': ['10001', '10001', '01010', '00100', '01010', '10001', '10001'],
++    'Y': ['10001', '10001', '10001', '01010', '00100', '00100', '00100'],
++    'Z': ['11111', '00001', '00010', '00100', '01000', '10000', '11111'],
++    ':': ['0', '0', '1', '0', '1', '0', '0'],
++    // Blank of the colon's width, so the minutes don't move when it blinks.
++    ';': ['0', '0', '0', '0', '0', '0', '0'],
++    ' ': ['000', '000', '000', '000', '000', '000', '000'],
++};
++
++const DAYS = {
++    fr: ['DIM', 'LUN', 'MAR', 'MER', 'JEU', 'VEN', 'SAM'],
++    en: ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'],
++};
++const MONTHS = {
++    fr: ['JANV', 'FEVR', 'MARS', 'AVR', 'MAI', 'JUIN', 'JUIL', 'AOUT', 'SEPT', 'OCT', 'NOV', 'DEC'],
++    en: ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'],
++};
++
++function textWidth(text) {
++    let cols = 0;
++    for (const ch of text) cols += (FONT[ch] || FONT[' '])[0].length + 1;
++    return Math.max(0, cols - 1);
++}
++
++export function createLedClock() {
++    const card = document.createElement('div');
++    card.className = 'tt-audio-led';
++    const canvas = document.createElement('canvas');
++    canvas.className = 'tt-audio-led-canvas';
++    card.appendChild(canvas);
++    const ctx = canvas.getContext('2d');
++    const lang = String(navigator.language || 'fr').toLowerCase().startsWith('fr') ? 'fr' : 'en';
++    let lastKey = '';
++
++    function dot(x, y, r, on) {
++        ctx.beginPath();
++        ctx.arc(x, y, r, 0, Math.PI * 2);
++        ctx.fillStyle = on ? LIT : UNLIT;
++        ctx.fill();
++    }
++
++    // Draws text with its top-left at (x, y); `pitch` is the dot spacing.
++    function drawText(text, x, y, pitch, lit) {
++        ctx.shadowColor = GLOW;
++        ctx.shadowBlur = lit ? pitch * 0.9 : 0;
++        let cx = x;
++        for (const ch of text) {
++            const glyph = FONT[ch] || FONT[' '];
++            for (let row = 0; row < 7; row++) {
++                for (let col = 0; col < glyph[row].length; col++) {
++                    const on = glyph[row][col] === '1';
++                    if (!on && !lit) continue;
++                    if (on) dot(cx + col * pitch + pitch / 2, y + row * pitch + pitch / 2, pitch * 0.36, lit !== false);
++                }
++            }
++            cx += (glyph[0].length + 1) * pitch;
++        }
++        ctx.shadowBlur = 0;
++    }
++
++    function draw(now) {
++        const ratio = window.devicePixelRatio || 1;
++        const W = Math.round(canvas.clientWidth * ratio);
++        const H = Math.round(canvas.clientHeight * ratio);
++        if (!W || !H) return;
++        if (canvas.width !== W || canvas.height !== H) {
++            canvas.width = W;
++            canvas.height = H;
++        }
++        ctx.clearRect(0, 0, W, H);
++
++        const pad = (n) => (n < 10 ? '0' : '') + n;
++        const h = pad(now.getHours());
++        const m = pad(now.getMinutes());
++        const s = now.getSeconds();
++        const colonOn = s % 2 === 0;
++        const timeText = h + (colonOn ? ':' : ';') + m;
++
++        // Seconds ring on the left, the full height of the card.
++        const ringR = H * 0.42;
++        const ringCx = H * 0.5;
++        const ringCy = H * 0.5;
++        for (let i = 0; i < 60; i++) {
++            const a = (i / 60) * Math.PI * 2 - Math.PI / 2;
++            const big = i % 5 === 0;
++            ctx.shadowColor = GLOW;
++            ctx.shadowBlur = i <= s ? H * 0.02 : 0;
++            dot(ringCx + Math.cos(a) * ringR, ringCy + Math.sin(a) * ringR, H * (big ? 0.022 : 0.015), i <= s);
++        }
++        ctx.shadowBlur = 0;
++        // Seconds inside the ring.
++        const secPitch = H * 0.06;
++        const secText = pad(s);
++        drawText(secText, ringCx - textWidth(secText) * secPitch / 2, ringCy - 3.5 * secPitch, secPitch, true);
++
++        // Date on the right: weekday, day number, month (3 rows of dots).
++        const datePitch = H * 0.04;
++        const day = String(now.getDate());
++        const weekday = DAYS[lang][now.getDay()];
++        const month = MONTHS[lang][now.getMonth()];
++        const rows = [weekday, day, month];
++        const dateW = Math.max(...rows.map(textWidth)) * datePitch;
++        const right = W - H * 0.04;
++        const rowH = 8.5 * datePitch;
++        const top = (H - rows.length * rowH + 1.5 * datePitch) / 2;
++        rows.forEach((text, i) => {
++            drawText(text, right - textWidth(text) * datePitch, top + i * rowH, datePitch, true);
++        });
++
++        // Time, as large as fits between the ring and the date.
++        const ringEnd = ringCx + ringR + H * 0.08;
++        // Keep a clear gap before the date column.
++        const space = right - dateW - H * 0.3 - ringEnd;
++        const cols = textWidth('88:88');
++        const timePitch = Math.min(H * 0.105, space / cols);
++        const timeLeft = ringEnd + (space - cols * timePitch) / 2;
++        const timeTop = (H - 7 * timePitch) / 2;
++        drawText(h + ':' + m, timeLeft, timeTop, timePitch, false);
++        drawText(timeText, timeLeft, timeTop, timePitch, true);
++    }
++
++    return {
++        element: card,
++        // Called twice a second by the audio screen; redraws when the second changes.
++        update() {
++            const now = new Date();
++            const key = now.getSeconds() + ':' + canvas.clientWidth;
++            if (key === lastKey) return;
++            lastKey = key;
++            draw(now);
++        },
++    };
++}
 diff --git a/mods/features/audioMap.js b/mods/features/audioMap.js
 new file mode 100644
 index 0000000..5513018
@@ -261,10 +444,10 @@ index 0000000..5513018
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..721669b
+index 0000000..7144239
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,629 @@
+@@ -0,0 +1,568 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -315,90 +498,29 @@ index 0000000..721669b
 +        linear-gradient(180deg, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0.45) 100%);
 +}
 +
-+.tt-audio-clock {
-+    /* Every size inside the card is in em, so the card scales from font-size. */
-+    font-size: 1vh;
-+    position: relative;
-+    width: 52em;
-+    height: 27.04em;
-+    margin-bottom: 2.5vh;
-+    border-radius: 4.2em;
-+    /* Translucent glass: the animated, blurred artwork shows through. */
-+    background: rgba(255, 255, 255, 0.1);
-+    border: 0.15em solid rgba(255, 255, 255, 0.16);
-+    box-shadow: 0 1.5em 4em rgba(0, 0, 0, 0.25), inset 0 0.1em 0 rgba(255, 255, 255, 0.12);
-+    overflow: hidden;
-+    color: #fff;
++.tt-audio-led {
++    box-sizing: border-box;
++    width: 62vh;
++    height: 17vh;
++    margin-bottom: 2vh;
++    padding: 1.2vh 1.6vh;
++    border-radius: 2.2vh;
++    background: rgba(8, 8, 10, 0.88);
++    box-shadow: 0 2vh 5vh rgba(0, 0, 0, 0.4), inset 0 0 0 0.15vh rgba(255, 255, 255, 0.06);
 +}
 +
-+.tt-audio-clock-face {
-+    position: absolute;
-+    top: 0;
-+    left: 0;
++.tt-audio-led-canvas {
++    display: block;
 +    width: 100%;
 +    height: 100%;
-+}
-+
-+.tt-audio-clock-date {
-+    position: absolute;
-+    top: 19%;
-+    left: 0;
-+    right: 0;
-+    text-align: center;
-+    font-size: 2.5em;
-+    font-weight: 600;
-+    color: rgba(255, 255, 255, 0.85);
-+}
-+
-+.tt-audio-clock-weekday {
-+    color: #3B7BFF;
-+}
-+
-+.tt-audio-clock-digits {
-+    position: absolute;
-+    top: 50%;
-+    width: 38%;
-+    font-size: 9.4em;
-+    font-weight: 700;
-+    line-height: 1;
-+    font-variant-numeric: tabular-nums;
-+    letter-spacing: -0.02em;
-+    transform: translateY(-50%);
-+}
-+
-+.tt-audio-clock-hours {
-+    right: 59%;
-+    text-align: right;
-+}
-+
-+.tt-audio-clock-minutes {
-+    left: 59%;
-+    text-align: left;
-+}
-+
-+.tt-audio-clock-weather {
-+    position: absolute;
-+    bottom: 17%;
-+    left: 0;
-+    right: 0;
-+    display: flex;
-+    align-items: center;
-+    justify-content: center;
-+    font-size: 2.5em;
-+    font-weight: 600;
-+    color: rgba(255, 255, 255, 0.85);
-+}
-+
-+.tt-audio-clock-weather-icon {
-+    width: 1.5em;
-+    height: 1.5em;
-+    margin-right: 0.35em;
 +}
 +
 +.tt-audio-content {
 +    position: relative;
 +    display: flex;
-+    align-items: center;
++    /* Both columns share the same height: the player starts level with the
++       weather card and ends level with the bottom of the map. */
++    align-items: stretch;
 +    width: 86vw;
 +}
 +
@@ -448,8 +570,8 @@ index 0000000..721669b
 +/* Swiss weather map (MeteoSwiss data), where the large artwork used to be. */
 +.tt-audio-map {
 +    position: relative;
-+    width: 66vh;
-+    height: calc(66vh * 646 / 1000);
++    width: 62vh;
++    height: calc(62vh * 646 / 1000);
 +    border-radius: 2.2vh;
 +    background: rgba(34, 40, 48, 0.72);
 +    box-shadow: 0 2vh 5vh rgba(0, 0, 0, 0.35);
@@ -543,6 +665,8 @@ index 0000000..721669b
 +    flex: 1 1 auto;
 +    min-width: 0;
 +    max-width: 52vw;
++    display: flex;
++    flex-direction: column;
 +}
 +
 +/* 5-day forecast card above the map, styled like the MeteoSwiss map labels. */
@@ -551,8 +675,8 @@ index 0000000..721669b
 +    align-items: stretch;
 +    gap: 1vh;
 +    box-sizing: border-box;
-+    width: 66vh;
-+    margin-bottom: 2.5vh;
++    width: 62vh;
++    margin-bottom: 2vh;
 +    padding: 1.4vh;
 +    border-radius: 2.2vh;
 +    background: rgba(34, 40, 48, 0.72);
@@ -630,7 +754,9 @@ index 0000000..721669b
 +.tt-audio-spectrum {
 +    display: block;
 +    width: 100%;
-+    height: 18vh;
++    /* Grows to fill the column, so the controls end level with the map. */
++    flex: 1 1 18vh;
++    min-height: 18vh;
 +    margin: 2.5vh 0 2vh;
 +}
 +
@@ -743,10 +869,6 @@ index 0000000..721669b
 +    justify-content: center;
 +}
 +
-+.tt-audio-hint {
-+    font-size: 1.8vh;
-+    color: rgba(255, 255, 255, 0.45);
-+}
 +
 +.tt-audio-exit {
 +    margin-left: 3vh;
@@ -789,7 +911,7 @@ index 0000000..721669b
 +.tt-audio-controls,
 +.tt-audio-progress,
 +.tt-audio-footer,
-+.tt-audio-clock,
++.tt-audio-led,
 +.tt-audio-weather {
 +    transition: opacity 1.5s ease;
 +}
@@ -801,7 +923,7 @@ index 0000000..721669b
 +    opacity: 0.35;
 +}
 +
-+.tt-audio-dim .tt-audio-clock,
++.tt-audio-dim .tt-audio-led,
 +.tt-audio-dim .tt-audio-weather {
 +    opacity: 0.6;
 +}
@@ -836,9 +958,10 @@ index 0000000..721669b
 +    display: none;
 +}
 +
-+.tt-audio-ambient .tt-audio-clock {
-+    font-size: 0.577vh;
-+    margin-bottom: 1.5vh;
++.tt-audio-ambient .tt-audio-led {
++    width: 44vh;
++    height: 12vh;
++    margin-bottom: 0;
 +}
 +
 +.tt-audio-ambient .tt-audio-info {
@@ -889,17 +1012,16 @@ index 0000000..721669b
 +    .tt-audio-spectrum { height: 8vh; margin: 2.5vh 0 2vh; }
 +    .tt-audio-btn { width: 9vh; height: 9vh; margin: 0 2vh; }
 +    .tt-audio-btn-main { width: 11vh; height: 11vh; }
-+    .tt-audio-hint { display: none; }
 +    .tt-audio-weather { width: 88vw; gap: 1.5vw; margin-bottom: 2vh; }
 +    .tt-audio-weather-icon { width: 9vw; height: 9vw; }
-+    .tt-audio-clock { font-size: calc(80vw / 52); margin: 0 auto 2vh; }
++    .tt-audio-led { width: 88vw; height: calc(88vw * 17 / 62); }
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..96481a9
+index 0000000..f16fa60
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,563 @@
+@@ -0,0 +1,566 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode.
@@ -909,6 +1031,7 @@ index 0000000..96481a9
 +import { createWeather, weatherIcon, kindFor } from './audioWeather.js';
 +import { createSpectrum } from './audioSpectrum.js';
 +import { createSwissMap } from './audioMap.js';
++import { createLedClock } from './audioLedClock.js';
 +import { createBurnInGuard } from './audioBurnIn.js';
 +
 +const SEEK_STEP = 10;
@@ -1024,7 +1147,9 @@ index 0000000..96481a9
 +
 +    const artWrap = el('div', 'tt-audio-art-wrap');
 +
-+    // 5-day forecast above the Swiss weather map, in the same card style.
++    // Red LED clock, then the 5-day forecast and the Swiss weather map.
++    els.clock = createLedClock();
++    artWrap.appendChild(els.clock.element);
 +    els.weather = createWeather(t('player.audioOnly.today'), (data) => {
 +        els.map.setCities(data.cities);
 +    });
@@ -1101,7 +1226,6 @@ index 0000000..96481a9
 +    overlay.appendChild(content);
 +
 +    const footer = el('div', 'tt-audio-footer');
-+    footer.appendChild(el('span', 'tt-audio-hint', t('player.audioOnly.hint')));
 +    els.exit = el('button', 'tt-audio-exit', t('player.audioOnly.exit'));
 +    els.exit.addEventListener('click', () => disableAudioOnly('exit button'));
 +    footer.appendChild(els.exit);
@@ -1230,6 +1354,7 @@ index 0000000..96481a9
 +
 +function tick() {
 +    els.burnIn.tick();
++    els.clock.update();
 +    // Leave audio mode on its own when the player is closed.
 +    const player = getPlayer();
 +    const data = player && player.getVideoData ? player.getVideoData() : null;
