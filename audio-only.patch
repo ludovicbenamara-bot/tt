@@ -162,10 +162,10 @@ index 0000000..2dfe900
 +}
 diff --git a/mods/features/audioHue.js b/mods/features/audioHue.js
 new file mode 100644
-index 0000000..7d9d1ae
+index 0000000..3760d73
 --- /dev/null
 +++ b/mods/features/audioHue.js
-@@ -0,0 +1,153 @@
+@@ -0,0 +1,152 @@
 +// Philips Hue ambiance: every time a new video starts (audio mode or not),
 +// the Hue strip is turned on in the artwork's dominant colour. The APK's
 +// local server talks to the Hue Bridge; the bridge address and key are set
@@ -175,7 +175,6 @@ index 0000000..7d9d1ae
 +// it stays off (new videos don't turn it back on) until switched on again.
 +
 +import { colorFromImage } from './audioSpectrum.js';
-+import { mainVideo, mainPlayer } from './audioMainVideo.js';
 +
 +const HUE_URL = 'http://127.0.0.1:47913/hue';
 +const CHECK_MS = 2000;
@@ -295,7 +294,7 @@ index 0000000..7d9d1ae
 +};
 +
 +function currentVideoId() {
-+    const player = mainPlayer();
++    const player = document.querySelector('.html5-video-player');
 +    try {
 +        const data = player && player.getVideoData ? player.getVideoData() : null;
 +        return data && data.video_id;
@@ -307,7 +306,7 @@ index 0000000..7d9d1ae
 +function check() {
 +    const videoId = currentVideoId();
 +    if (!videoId || videoId === lastVideoId || !VIDEO_ID_RE.test(videoId)) return;
-+    const video = mainVideo();
++    const video = document.querySelector('video');
 +    if (!video || video.paused) return;
 +    lastVideoId = videoId;
 +    colorFromImage(`https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, (rgb) => {
@@ -426,10 +425,10 @@ index 0000000..5a2a954
 +}
 diff --git a/mods/features/audioLedClock.js b/mods/features/audioLedClock.js
 new file mode 100644
-index 0000000..f5fcfa6
+index 0000000..7a7a925
 --- /dev/null
 +++ b/mods/features/audioLedClock.js
-@@ -0,0 +1,218 @@
+@@ -0,0 +1,195 @@
 +// LED dot-matrix clock, like a station / studio wall clock: the time in large
 +// dot digits on the left, then a ring of 60 dots lit up to the current second
 +// (with the seconds inside), and the date (weekday, day, month) on the right.
@@ -506,8 +505,6 @@ index 0000000..f5fcfa6
 +    const ctx = canvas.getContext('2d');
 +    const lang = String(navigator.language || 'fr').toLowerCase().startsWith('fr') ? 'fr' : 'en';
 +    let lastKey = '';
-+    // Glow sprites by size (see sprite()); emptied when the colour changes.
-+    let sprites = {};
 +    let LIT;
 +    let UNLIT;
 +    let GLOW;
@@ -517,37 +514,11 @@ index 0000000..f5fcfa6
 +        LIT = `rgb(${r}, ${g}, ${b})`;
 +        UNLIT = `rgba(${r}, ${g}, ${b}, 0.12)`;
 +        GLOW = `rgba(${r}, ${g}, ${b}, 0.55)`;
-+        sprites = {};
 +        lastKey = '';
 +    }
 +    setColor(DEFAULT_RGB);
 +
-+    // A lit dot with its glow, drawn once per size and colour, then stamped:
-+    // a canvas shadow blur on every dot was a large part of the screen's CPU use.
-+    function sprite(r, glow) {
-+        const key = `${r.toFixed(1)}:${glow.toFixed(1)}`;
-+        if (sprites[key]) return sprites[key];
-+        const size = Math.ceil((r + glow * 1.5) * 2);
-+        const c = document.createElement('canvas');
-+        c.width = size;
-+        c.height = size;
-+        const g = c.getContext('2d');
-+        g.shadowColor = GLOW;
-+        g.shadowBlur = glow;
-+        g.fillStyle = LIT;
-+        g.beginPath();
-+        g.arc(size / 2, size / 2, r, 0, Math.PI * 2);
-+        g.fill();
-+        sprites[key] = c;
-+        return c;
-+    }
-+
-+    function dot(x, y, r, on, glow) {
-+        if (on && glow > 0) {
-+            const s = sprite(r, glow);
-+            ctx.drawImage(s, x - s.width / 2, y - s.height / 2);
-+            return;
-+        }
++    function dot(x, y, r, on) {
 +        ctx.beginPath();
 +        ctx.arc(x, y, r, 0, Math.PI * 2);
 +        ctx.fillStyle = on ? LIT : UNLIT;
@@ -556,7 +527,8 @@ index 0000000..f5fcfa6
 +
 +    // Draws text with its top-left at (x, y); `pitch` is the dot spacing.
 +    function drawText(text, x, y, pitch, lit) {
-+        const glow = lit ? pitch * 0.9 : 0;
++        ctx.shadowColor = GLOW;
++        ctx.shadowBlur = lit ? pitch * 0.9 : 0;
 +        let cx = x;
 +        for (const ch of text) {
 +            const glyph = FONT[ch] || FONT[' '];
@@ -564,11 +536,12 @@ index 0000000..f5fcfa6
 +                for (let col = 0; col < glyph[row].length; col++) {
 +                    const on = glyph[row][col] === '1';
 +                    if (!on && !lit) continue;
-+                    if (on) dot(cx + col * pitch + pitch / 2, y + row * pitch + pitch / 2, pitch * 0.36, lit !== false, glow);
++                    if (on) dot(cx + col * pitch + pitch / 2, y + row * pitch + pitch / 2, pitch * 0.36, lit !== false);
 +                }
 +            }
 +            cx += (glyph[0].length + 1) * pitch;
 +        }
++        ctx.shadowBlur = 0;
 +    }
 +
 +    function draw(now) {
@@ -625,8 +598,11 @@ index 0000000..f5fcfa6
 +        for (let i = 0; i < 60; i++) {
 +            const a = (i / 60) * Math.PI * 2 - Math.PI / 2;
 +            const big = i % 5 === 0;
-+            dot(ringCx + Math.cos(a) * ringR, ringCy + Math.sin(a) * ringR, H * (big ? 0.022 : 0.015), i <= s, H * 0.02);
++            ctx.shadowColor = GLOW;
++            ctx.shadowBlur = i <= s ? H * 0.02 : 0;
++            dot(ringCx + Math.cos(a) * ringR, ringCy + Math.sin(a) * ringR, H * (big ? 0.022 : 0.015), i <= s);
 +        }
++        ctx.shadowBlur = 0;
 +        const secPitch = H * 0.06;
 +        const secText = pad(s);
 +        drawText(secText, ringCx - textWidth(secText) * secPitch / 2, ringCy - 3.5 * secPitch, secPitch, true);
@@ -647,49 +623,6 @@ index 0000000..f5fcfa6
 +            draw(now);
 +        },
 +    };
-+}
-diff --git a/mods/features/audioMainVideo.js b/mods/features/audioMainVideo.js
-new file mode 100644
-index 0000000..6e5c24a
---- /dev/null
-+++ b/mods/features/audioMainVideo.js
-@@ -0,0 +1,37 @@
-+// YouTube TV can keep more than one <video> in the page (e.g. a stalled
-+// preview that still reports "playing"), so "the first <video>" is not always
-+// the one heard. The main video is the one whose time is moving, then one not
-+// paused, then the largest on screen.
-+
-+function area(el) {
-+    const r = el.getBoundingClientRect();
-+    return Math.max(0, r.width) * Math.max(0, r.height);
-+}
-+
-+// Last currentTime seen for each element (the audio screen asks twice a second).
-+const lastTimes = new WeakMap();
-+
-+export function mainVideo() {
-+    const videos = document.getElementsByTagName('video');
-+    if (videos.length <= 1) return videos[0] || null;
-+    let best = null;
-+    let bestScore = -1;
-+    for (let i = 0; i < videos.length; i++) {
-+        const v = videos[i];
-+        const before = lastTimes.get(v);
-+        lastTimes.set(v, v.currentTime);
-+        const moving = before !== undefined && v.currentTime !== before;
-+        const score = (moving ? 2e9 : 0) + (v.paused ? 0 : 1e9) + area(v);
-+        if (score > bestScore) {
-+            best = v;
-+            bestScore = score;
-+        }
-+    }
-+    return best;
-+}
-+
-+export function mainPlayer() {
-+    const video = mainVideo();
-+    const player = video && video.closest ? video.closest('.html5-video-player') : null;
-+    return player || document.querySelector('.html5-video-player');
 +}
 diff --git a/mods/features/audioMap.js b/mods/features/audioMap.js
 new file mode 100644
@@ -792,7 +725,7 @@ index 0000000..5513018
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..b091574
+index 0000000..2b6fbf0
 --- /dev/null
 +++ b/mods/features/audioOnly.css
 @@ -0,0 +1,705 @@
@@ -815,24 +748,24 @@ index 0000000..b091574
 +    -webkit-font-smoothing: antialiased;
 +}
 +
-+/* Animated, blurred artwork behind everything: a 48x27 canvas stretched over
-+   the screen (so the blur costs nothing); only its transform is animated. */
++/* Animated, heavily blurred artwork behind everything. The layer is blurred
++   at a small size and scaled up, which is far cheaper for TV GPUs. */
 +.tt-audio-backdrop {
 +    position: absolute;
 +    top: 30%;
 +    left: 30%;
 +    width: 40%;
 +    height: 40%;
++    background-size: cover;
++    background-position: center;
++    filter: blur(24px) saturate(1.8) brightness(0.75);
 +    opacity: 0.95;
-+    will-change: transform;
-+    /* Still: the screen has no decorative animation (user's choice, and the
-+       TV recomposites everything for any moving layer). */
-+    transform: translate(-10%, -8%) scale(3.4);
++    animation: tt-audio-drift 28s ease-in-out infinite alternate;
 +}
 +
 +.tt-audio-backdrop-2 {
 +    opacity: 0.5;
-+    transform: translate(12%, 10%) scale(3.9) rotate(180deg);
++    animation: tt-audio-drift-2 36s ease-in-out infinite alternate;
 +}
 +
 +.tt-audio-shade {
@@ -859,7 +792,6 @@ index 0000000..b091574
 +
 +.tt-audio-led-canvas {
 +    display: block;
-+    will-change: transform;
 +    width: 100%;
 +    height: 100%;
 +}
@@ -875,8 +807,6 @@ index 0000000..b091574
 +
 +/* Large artwork; shrinks a little when paused, like Apple Music. */
 +.tt-audio-art-wrap {
-+    /* Own layer, so the spectrum's frames don't recomposite it. */
-+    will-change: transform;
 +    flex: 0 0 auto;
 +    display: flex;
 +    flex-direction: column;
@@ -901,6 +831,11 @@ index 0000000..b091574
 +/* hqdefault thumbnails are 4:3 with letterbox bars; zoom them off. */
 +.tt-audio-art-letterboxed {
 +    background-size: auto 134%;
++}
++
++.tt-audio-paused .tt-audio-art {
++    transform: scale(0.86);
++    box-shadow: 0 2vh 5vh rgba(0, 0, 0, 0.4);
 +}
 +
 +.tt-audio-title-row {
@@ -1105,8 +1040,6 @@ index 0000000..b091574
 +    width: 100%;
 +    flex: 0 0 15vh;
 +    height: 15vh;
-+    /* Own layer: redrawing it does not repaint the rest of the screen. */
-+    will-change: transform;
 +    /* Centred in the room between the title and the progress bar. */
 +    margin: auto 0;
 +}
@@ -1122,16 +1055,10 @@ index 0000000..b091574
 +
 +.tt-audio-fill {
 +    height: 100%;
-+    width: 100%;
++    width: 0;
 +    border-radius: 0.4vh;
 +    background: rgba(255, 255, 255, 0.92);
-+    /* Scaled, not resized: a transform runs on the GPU, while animating the
-+       width re-lays out the page on every frame (a large CPU cost on the TV). */
-+    transform-origin: left center;
-+    transform: scaleX(0);
-+    /* No transition: it moves twice a second by tiny steps, and any continuous
-+       animation makes this TV recomposite the whole screen at 60 fps. */
-+    will-change: transform;
++    transition: width 0.5s linear;
 +}
 +
 +.tt-audio-times {
@@ -1239,6 +1166,20 @@ index 0000000..b091574
 +    font-weight: 600;
 +    cursor: pointer;
 +    outline: none;
++}
++
++@keyframes tt-audio-blink {
++    50% { opacity: 0.25; }
++}
++
++@keyframes tt-audio-drift {
++    0% { transform: translate(-10%, -8%) scale(3.4) rotate(0deg); }
++    100% { transform: translate(10%, 8%) scale(3.9) rotate(8deg); }
++}
++
++@keyframes tt-audio-drift-2 {
++    0% { transform: translate(12%, 10%) scale(3.9) rotate(180deg); }
++    100% { transform: translate(-12%, -10%) scale(3.4) rotate(200deg); }
 +}
 +
 +/* Philips Hue tile, drawn like a light in the Hue app. */
@@ -1493,20 +1434,12 @@ index 0000000..b091574
 +    .tt-audio-weather-icon { width: 9vw; height: 9vw; }
 +    .tt-audio-led { width: 88vw; height: calc(88vw * 17 / 62); }
 +}
-+
-+/* No animations anywhere on the audio screen (only the spectrum and the clock
-+   change, as data). Changes of state show at once. */
-+.tt-audio,
-+.tt-audio * {
-+    transition: none !important;
-+    animation: none !important;
-+}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..6ff9d44
+index 0000000..bdc8632
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,660 @@
+@@ -0,0 +1,620 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode, Down = Hue tile.
@@ -1520,7 +1453,6 @@ index 0000000..6ff9d44
 +import { createLedClock } from './audioLedClock.js';
 +import { createBurnInGuard } from './audioBurnIn.js';
 +import { createHueTile } from './audioHueTile.js';
-+import { mainVideo, mainPlayer } from './audioMainVideo.js';
 +
 +const SEEK_STEP = 10;
 +// Channel up/down on the remote: Starboard key codes, Android's raw key codes,
@@ -1559,11 +1491,11 @@ index 0000000..6ff9d44
 +}
 +
 +function getPlayer() {
-+    return mainPlayer();
++    return document.querySelector('.html5-video-player');
 +}
 +
 +function getVideo() {
-+    return mainVideo();
++    return document.querySelector('video');
 +}
 +
 +function formatTime(seconds) {
@@ -1629,15 +1561,9 @@ index 0000000..6ff9d44
 +    overlay = el('div', 'tt-audio');
 +    overlay.style.display = 'none';
 +
-+    // Two still copies of the blurred artwork, like Apple Music's background.
-+    // Tiny canvases: stretched over the screen they look blurred for free,
-+    // where a CSS blur filter on an animated layer costs the TV a lot of CPU/GPU.
-+    els.backdrop = el('canvas', 'tt-audio-backdrop');
-+    els.backdrop2 = el('canvas', 'tt-audio-backdrop tt-audio-backdrop-2');
-+    for (const c of [els.backdrop, els.backdrop2]) {
-+        c.width = BACKDROP_W;
-+        c.height = BACKDROP_H;
-+    }
++    // Two drifting copies of the blurred artwork, like Apple Music's animated background.
++    els.backdrop = el('div', 'tt-audio-backdrop');
++    els.backdrop2 = el('div', 'tt-audio-backdrop tt-audio-backdrop-2');
 +    overlay.appendChild(els.backdrop);
 +    overlay.appendChild(els.backdrop2);
 +    overlay.appendChild(el('div', 'tt-audio-shade'));
@@ -1749,34 +1675,6 @@ index 0000000..6ff9d44
 +    }
 +}
 +
-+const BACKDROP_W = 48;
-+const BACKDROP_H = 27;
-+let backdropRequest = 0;
-+
-+// Draws the artwork once, small and softened, on both backdrop canvases.
-+function drawBackdrop(url) {
-+    const request = ++backdropRequest;
-+    const paint = (img) => {
-+        if (request !== backdropRequest) return;
-+        for (const c of [els.backdrop, els.backdrop2]) {
-+            const ctx = c.getContext('2d');
-+            ctx.clearRect(0, 0, BACKDROP_W, BACKDROP_H);
-+            if (!img) continue;
-+            ctx.filter = 'blur(1.5px) saturate(1.8) brightness(0.75)';
-+            // Cover the canvas, cropping the letterbox bars of 4:3 thumbnails.
-+            const scale = Math.max(BACKDROP_W / img.naturalWidth, BACKDROP_H / (img.naturalHeight * 0.75));
-+            const w = img.naturalWidth * scale;
-+            const h = img.naturalHeight * scale;
-+            ctx.drawImage(img, (BACKDROP_W - w) / 2, (BACKDROP_H - h) / 2, w, h);
-+            ctx.filter = 'none';
-+        }
-+    };
-+    if (!url) return paint(null);
-+    const img = new Image();
-+    img.onload = () => paint(img);
-+    img.src = url;
-+}
-+
 +// Prefer the HD thumbnail (16:9, no letterbox); not every video has one.
 +function setArtwork(videoId) {
 +    const hq = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
@@ -1784,7 +1682,8 @@ index 0000000..6ff9d44
 +    const apply = (url, letterboxed) => {
 +        els.art.style.backgroundImage = `url("${url}")`;
 +        els.art.classList.toggle('tt-audio-art-letterboxed', letterboxed);
-+        drawBackdrop(url);
++        els.backdrop.style.backgroundImage = `url("${url}")`;
++        els.backdrop2.style.backgroundImage = `url("${url}")`;
 +    };
 +    apply(hq, true);
 +    const probe = new Image();
@@ -1859,7 +1758,8 @@ index 0000000..6ff9d44
 +        els.spectrum.setColorFromImage(`https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, (rgb) => els.clock.setColor(rgb));
 +    } else {
 +        els.art.style.removeProperty('background-image');
-+        drawBackdrop(null);
++        els.backdrop.style.removeProperty('background-image');
++        els.backdrop2.style.removeProperty('background-image');
 +    }
 +}
 +
@@ -1870,7 +1770,7 @@ index 0000000..6ff9d44
 +    const current = video.currentTime;
 +    const ratio = isFinite(duration) && duration > 0 ? Math.min(current / duration, 1) : 0;
 +
-+    els.fill.style.transform = `scaleX(${ratio.toFixed(4)})`;
++    els.fill.style.width = `${ratio * 100}%`;
 +    els.current.textContent = formatTime(current);
 +    // Remaining time, as Apple Music shows it.
 +    els.duration.textContent = isFinite(duration) ? '-' + formatTime(duration - current) : t('player.audioOnly.live');
@@ -2018,16 +1918,9 @@ index 0000000..6ff9d44
 +    setTimeout(() => button.classList.remove('tt-audio-btn-pressed'), 200);
 +}
 +
-+function isWatching() {
-+    if (String(location.hash).indexOf('/watch') === -1) return false;
-+    const video = getVideo();
-+    return !!(video && currentVideoId());
-+}
-+
 +function keyHandler(evt) {
-+    // Red key: direct switch, from a playing video or from the audio screen.
-+    // Only on the watch page: browse pages keep a hidden <video> element too.
-+    if (RED_KEYS.indexOf(evt.keyCode) !== -1 && (window.isAudioOnly || isWatching())) {
++    // Red key: direct switch, from the video or from the audio screen.
++    if (RED_KEYS.indexOf(evt.keyCode) !== -1 && (window.isAudioOnly || getVideo())) {
 +        if (evt.type === 'keydown') {
 +            if (window.isAudioOnly) disableAudioOnly('red key');
 +            else enableAudioOnly();
@@ -2169,20 +2062,35 @@ index 0000000..6ff9d44
 +export { enableAudioOnly, disableAudioOnly, toggleAudioOnly };
 diff --git a/mods/features/audioSpectrum.js b/mods/features/audioSpectrum.js
 new file mode 100644
-index 0000000..6e48e36
+index 0000000..acd42e0
 --- /dev/null
 +++ b/mods/features/audioSpectrum.js
-@@ -0,0 +1,216 @@
-+// Winamp-style LED spectrum for the audio-only screen, as a still picture:
-+// columns of LED segments on a dark dot matrix, white peak caps and a blue
-+// dotted baseline, in the artwork's dominant colour (green until one is found).
-+// It does not move: it is drawn once per track (shape seeded by the track),
-+// once when the colour is known, and again only on pause or a size change.
-+// No timer, no audio capture: it costs no CPU while the music plays.
+@@ -0,0 +1,278 @@
++// Winamp-style LED spectrum analyser for the audio-only screen: columns of
++// LED segments on a dark dot matrix, white peak caps that hold then fall, and
++// a blue dotted baseline. The segments take the artwork's dominant colour
++// (green until one is found).
++// Cobalt plays sound through the TV's native player, so the page cannot
++// analyse it. The modified APK runs a small server on 127.0.0.1 that serves
++// Android's Visualizer spectrum of the output mix (YouTube's CSP allows
++// connect-src to localhost): while it answers, the bands follow the real
++// music. Otherwise they follow a simulated signal: a beat pulse, a bass-heavy
++// envelope and per-band noise, with fast attack and slow release.
 +
 +const BANDS = 24;
 +const ROWS = 14;
++const FRAME_MS = 33;
 +const GAP = 0.22;
++const PEAK_HOLD_MS = 450;
++const PEAK_FALL_PER_FRAME = 0.018;
++const ATTACK = 0.55;
++const RELEASE = 0.12;
++const SPECTRUM_URL = `http://127.0.0.1:47913/bands?n=${BANDS}&from=page`;
++const POLL_MS = 50;
++// Live data older than this is ignored (server gone, app paused...).
++const LIVE_MAX_AGE_MS = 600;
++// After a failed request, wait this long before trying again.
++const RETRY_MS = 5000;
 +
 +const COLORS = {
 +    off: 'rgba(120, 140, 120, 0.16)',
@@ -2263,81 +2171,131 @@ index 0000000..6e48e36
 +    img.src = url;
 +}
 +
-+// Small deterministic generator, so a track always gets the same picture.
-+function seeded(seed) {
-+    let x = seed >>> 0 || 1;
-+    return () => {
-+        x ^= x << 13;
-+        x ^= x >>> 17;
-+        x ^= x << 5;
-+        return (x >>> 0) / 4294967296;
-+    };
-+}
-+
-+function hashString(text) {
-+    let h = 2166136261;
-+    for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
-+    return h >>> 0;
-+}
-+
-+// A plausible frozen spectrum: louder lows, a bump in the mids, quieter highs.
-+function shapeFor(seed) {
-+    const rnd = seeded(seed);
-+    const levels = [];
-+    const peaks = [];
-+    for (let b = 0; b < BANDS; b++) {
-+        const x = b / (BANDS - 1);
-+        const envelope = 0.78 - 0.38 * x + 0.14 * Math.sin(x * Math.PI);
-+        const level = Math.max(0.08, Math.min(0.95, envelope * (0.7 + 0.45 * rnd())));
-+        levels.push(level);
-+        peaks.push(Math.min(1, level + 0.06 + 0.12 * rnd()));
-+    }
-+    return { levels, peaks };
-+}
-+
 +export function createSpectrum() {
 +    const canvas = document.createElement('canvas');
 +    canvas.className = 'tt-audio-spectrum';
 +    const ctx = canvas.getContext('2d');
 +
-+    let shape = shapeFor(1);
++    const levels = new Array(BANDS).fill(0);
++    const peaks = new Array(BANDS).fill(0);
++    const peakHeldAt = new Array(BANDS).fill(0);
++    const phases = Array.from({ length: BANDS }, () => Math.random() * Math.PI * 2);
 +    let rowColors = [];
 +    function setGradient(low, high) {
 +        rowColors = Array.from({ length: ROWS }, (_, r) => mix(low, high, r / (ROWS - 1)));
 +    }
 +    setGradient(COLORS.low, COLORS.high);
 +    let colorRequest = 0;
++
++    let timer = null;
 +    let paused = false;
-+    let shown = false;
++    let beatAt = 0;
++    let beatInterval = 500;
++    let liveLevels = null;
++    let liveAt = 0;
++    let pollTimer = null;
++    let polling = false;
++
++    function poll() {
++        if (polling) return;
++        polling = true;
++        fetch(SPECTRUM_URL, { cache: 'no-store' })
++            .then((r) => (r.ok ? r.text() : ''))
++            .then((text) => {
++                const values = text ? text.split(',') : [];
++                if (values.length === BANDS) {
++                    liveLevels = values.map((v) => (+v || 0) / 255);
++                    liveAt = Date.now();
++                }
++                polling = false;
++            }, () => {
++                polling = false;
++                // No server (original APK) or not ready yet: retry later.
++                clearInterval(pollTimer);
++                pollTimer = setTimeout(startPolling, RETRY_MS);
++            });
++    }
++
++    function startPolling() {
++        clearTimeout(pollTimer);
++        clearInterval(pollTimer);
++        pollTimer = setInterval(poll, POLL_MS);
++    }
++
++    function stopPolling() {
++        clearTimeout(pollTimer);
++        clearInterval(pollTimer);
++        pollTimer = null;
++    }
++
++    function resize() {
++        const ratio = window.devicePixelRatio || 1;
++        const w = Math.round(canvas.clientWidth * ratio);
++        const h = Math.round(canvas.clientHeight * ratio);
++        if (w && h && (canvas.width !== w || canvas.height !== h)) {
++            canvas.width = w;
++            canvas.height = h;
++        }
++    }
++
++    function targetLevel(band, now) {
++        if (paused) return 0;
++        if (now - beatAt > beatInterval) {
++            beatAt = now;
++            beatInterval = 420 + Math.random() * 180;
++        }
++        const beat = Math.max(0, 1 - (now - beatAt) / 260);
++        const x = band / (BANDS - 1);
++        // Louder lows, a bump in the mids, quieter highs.
++        const envelope = 0.7 - 0.3 * x + 0.12 * Math.sin(x * Math.PI);
++        // Two slow oscillators per band so neighbouring bands drift apart.
++        const wobble = 0.5 + 0.25 * Math.sin(now / (160 + band * 29) + phases[band]) +
++            0.25 * Math.sin(now / (410 + band * 17) - phases[band] * 2);
++        const noise = Math.random();
++        const bassKick = beat * Math.max(0, 1 - x * 1.6) * 0.55;
++        return Math.min(1, envelope * wobble * wobble * 1.3 + noise * noise * 0.3 + bassKick);
++    }
 +
 +    function draw() {
-+        if (!shown || canvas.offsetParent === null) return;
-+        const ratio = window.devicePixelRatio || 1;
-+        const W = Math.round(canvas.clientWidth * ratio);
-+        const H = Math.round(canvas.clientHeight * ratio);
++        const now = Date.now();
++        // Nothing to draw while hidden (e.g. ambient mode).
++        if (canvas.offsetParent === null) return;
++        resize();
++        const W = canvas.width;
++        const H = canvas.height;
 +        if (!W || !H) return;
-+        canvas.width = W;
-+        canvas.height = H;
 +
 +        const colW = W / BANDS;
 +        const baseH = H * 0.06;
 +        const rowH = (H - baseH * 2) / ROWS;
 +        const cellW = colW * (1 - GAP);
 +        const cellH = rowH * (1 - GAP);
-+        // Paused: the bars drop to a low idle level, like a silent analyser.
-+        const scale = paused ? 0.18 : 1;
++        ctx.clearRect(0, 0, W, H);
++        const live = now - liveAt < LIVE_MAX_AGE_MS ? liveLevels : null;
 +
 +        for (let b = 0; b < BANDS; b++) {
-+            const lit = Math.round(shape.levels[b] * scale * ROWS);
-+            const peakRow = Math.min(ROWS - 1, Math.round(shape.peaks[b] * scale * ROWS));
++            const target = live ? (paused ? 0 : live[b]) : targetLevel(b, now);
++            const k = target > levels[b] ? ATTACK : RELEASE;
++            levels[b] += (target - levels[b]) * k;
++
++            if (levels[b] >= peaks[b]) {
++                peaks[b] = levels[b];
++                peakHeldAt[b] = now;
++            } else if (now - peakHeldAt[b] > PEAK_HOLD_MS) {
++                peaks[b] = Math.max(0, peaks[b] - PEAK_FALL_PER_FRAME);
++            }
++
++            const lit = Math.round(levels[b] * ROWS);
++            const peakRow = Math.min(ROWS - 1, Math.round(peaks[b] * ROWS));
 +            const x = b * colW + (colW - cellW) / 2;
 +            for (let r = 0; r < ROWS; r++) {
 +                const y = H - baseH * 2 - (r + 1) * rowH + (rowH - cellH) / 2;
 +                if (r < lit) ctx.fillStyle = rowColors[r];
-+                else if (r === peakRow) ctx.fillStyle = COLORS.peak;
++                else if (r === peakRow && peaks[b] > 0.04) ctx.fillStyle = COLORS.peak;
 +                else ctx.fillStyle = COLORS.off;
 +                ctx.fillRect(x, y, cellW, r === peakRow && r >= lit ? cellH * 0.55 : cellH);
 +            }
++
 +            // Blue dotted baseline, two dots per band.
 +            ctx.fillStyle = COLORS.base;
 +            const dot = Math.min(baseH, colW * 0.18);
@@ -2348,25 +2306,23 @@ index 0000000..6e48e36
 +
 +    return {
 +        element: canvas,
-+        // The audio screen is shown: draw (once, it has its size now).
 +        start() {
-+            shown = true;
-+            draw();
++            if (timer) return;
++            timer = setInterval(draw, FRAME_MS);
++            startPolling();
 +        },
 +        stop() {
-+            shown = false;
++            clearInterval(timer);
++            timer = null;
++            stopPolling();
 +        },
 +        setPaused(value) {
-+            if (value === paused) return;
 +            paused = value;
-+            draw();
 +        },
-+        // Take the LED colour from an image that sends CORS headers, and give
-+        // this track its own frozen shape. onColor(rgb | null) for other widgets.
++        // Take the LED colour from an image that sends CORS headers.
++        // onColor(rgb | null): the LED colour found, for other widgets.
 +        setColorFromImage(url, onColor) {
 +            const request = ++colorRequest;
-+            shape = shapeFor(hashString(url));
-+            draw();
 +            const img = new Image();
 +            img.crossOrigin = 'anonymous';
 +            img.onload = () => {
@@ -2383,7 +2339,6 @@ index 0000000..6e48e36
 +                    setGradient(hslToRgb(hue, 0.72, 0.42), hslToRgb(hue, 0.85, 0.66));
 +                    if (onColor) onColor(hslToRgb(hue, 0.9, 0.58));
 +                }
-+                draw();
 +            };
 +            img.src = url;
 +        },

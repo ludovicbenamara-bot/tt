@@ -6,7 +6,7 @@ Version modifiée du script de [TizenTube](https://github.com/reisxd/TizenTube) 
 
 - **Bouton « Audio seulement »** dans la barre du lecteur et dans le menu ⚙ des paramètres de lecture.
 - **Écran « À l'écoute »** : grande pochette, fond flou animé aux couleurs de la pochette, titre / artiste, progression avec temps restant.
-- **Spectre LED façon Winamp**, fixe (dessiné une fois par morceau, aucune animation ni calcul pendant la lecture), dans la couleur de la pochette.
+- **Spectre LED façon Winamp** qui suit **la vraie musique** (capture Android, voir plus bas) et prend la couleur de la pochette.
 - **Carte météo de la Suisse** (données MétéoSuisse, contour et lacs swisstopo) avec 16 villes ; la pochette, réduite, est à côté du titre.
 - **Horloge LED à points** (heure, anneau des secondes, date) aux couleurs de la pochette.
 - **Ambiance Philips Hue** : à chaque vidéo, une bande Hue s'allume dans la couleur de la pochette (via le pont Hue local).
@@ -48,12 +48,15 @@ npm run build   # produit ../dist/userScript.js
 - YouTube TV n'autorise les connexions réseau qu'à une liste de sites Google / YouTube. La météo est donc récupérée par le module Java (MétéoSuisse, sinon [Open-Meteo](https://open-meteo.com/)) et servie au script sur `127.0.0.1` ; avec l'APK d'origine, une feuille Google Sheets publique sert de secours. Données météo : © MétéoSuisse ; fond de carte : © swisstopo.
 - L'application pointe vers une version figée de `u.js` (`cdn.jsdelivr.net/gh/ludovicbenamara-bot/tt@<commit>/u.js`) : le cache de jsDelivr sur une branche peut durer plusieurs heures.
 
-## Module Android (serveur local)
+## Spectre audio réel
 
-L'APK modifié contient un petit module Java (`native-src.zip`) avec un serveur sur `http://127.0.0.1:47913`,
-accessible uniquement depuis la TV et réservé à la page YouTube : météo MétéoSuisse, bande Philips Hue,
-et capture du son réel (`android.media.audiofx.Visualizer`, `/bands`). Le spectre de l'écran audio étant
-désormais fixe, la capture n'est plus utilisée par défaut (elle ne démarre que si une page la demande).
+Cobalt joue le son via le lecteur natif de la TV, donc la page ne peut pas l'analyser.
+L'APK modifié contient un petit module Java (`native-src.zip`) qui capte la sortie audio
+avec `android.media.audiofx.Visualizer` et la sert au script sur `http://127.0.0.1:47913`
+(accessible uniquement depuis la TV ; la politique de sécurité de YouTube autorise `127.0.0.1`).
+Sans ce module (APK d'origine), le spectre reste animé en mode simulé.
+Il faut accorder l'autorisation audio une fois :
+`adb shell pm grant io.gh.reisxd.tizentube.cobalt android.permission.RECORD_AUDIO`.
 
 ## Licence
 
