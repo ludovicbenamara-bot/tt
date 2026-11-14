@@ -1633,10 +1633,10 @@ index 0000000..124d09c
 +}
 diff --git a/mods/features/audioWeather.js b/mods/features/audioWeather.js
 new file mode 100644
-index 0000000..b9f85b1
+index 0000000..5d57eef
 --- /dev/null
 +++ b/mods/features/audioWeather.js
-@@ -0,0 +1,277 @@
+@@ -0,0 +1,299 @@
 +// 5-day weather row for the audio-only screen.
 +// YouTube TV's CSP only lets the page reach Google/YouTube hosts, so the
 +// forecast is relayed through a public Google Sheet: its A1 cell runs
@@ -1646,6 +1646,9 @@ index 0000000..b9f85b1
 +
 +const SHEET_ID = '1H4rCefkljqqIWs59OCz7jyXSID3uUnaaj3vlhc5prQ0';
 +const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&headers=0&range=A1:G12`;
++// The modified APK's local server fetches Open-Meteo natively (no CSP, no
++// Google throttling); the sheet is only a fallback for the original APK.
++const NATIVE_URL = 'http://127.0.0.1:47913/weather';
 +const CITY_COLUMN = 6;
 +const CACHE_KEY = 'tt-audio-weather';
 +const CACHE_TTL_MS = 60 * 60 * 1000;
@@ -1838,7 +1841,26 @@ index 0000000..b9f85b1
 +    }
 +}
 +
++async function fetchNativeForecast() {
++    const json = JSON.parse(await fetchText(NATIVE_URL));
++    const days = (json && json.days || []).filter((d) =>
++        d && typeof d.date === 'string' && typeof d.code === 'number' &&
++        typeof d.max === 'number' && typeof d.min === 'number');
++    if (!days.length) throw new Error('no native forecast');
++    const data = { savedAt: Date.now(), city: '', days: days.slice(0, DAYS) };
++    writeCache(data);
++    return data;
++}
++
 +async function fetchForecast() {
++    try {
++        return await fetchNativeForecast();
++    } catch (e) {
++        return fetchSheetForecast();
++    }
++}
++
++async function fetchSheetForecast() {
 +    const text = await fetchText(SHEET_URL);
 +    const json = JSON.parse(text.slice(text.indexOf('(') + 1, text.lastIndexOf(')')));
 +    const rows = json && json.table && json.table.rows;
