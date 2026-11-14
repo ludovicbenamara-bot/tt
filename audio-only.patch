@@ -160,61 +160,6 @@ index 0000000..2dfe900
 +        },
 +    };
 +}
-diff --git a/mods/features/audioDiag.js b/mods/features/audioDiag.js
-new file mode 100644
-index 0000000..393c865
---- /dev/null
-+++ b/mods/features/audioDiag.js
-@@ -0,0 +1,49 @@
-+// TEMPORARY diagnostics: what picture and sound the player really gets.
-+import { mainPlayer, mainVideo } from './audioMainVideo.js';
-+
-+let lastId = null;
-+// Audio formats offered in the player response (itag:mime:kbps).
-+let audioFormats = {};
-+const origParse = JSON.parse;
-+JSON.parse = function () {
-+    const r = origParse.apply(this, arguments);
-+    try {
-+        const f = r && r.streamingData && r.streamingData.adaptiveFormats;
-+        const id = r && r.videoDetails && r.videoDetails.videoId;
-+        if (f && id) {
-+            audioFormats[id] = f.filter((x) => x.mimeType.indexOf('audio/') === 0)
-+                .map((x) => x.itag + ':' + x.mimeType.split(';')[0].replace('audio/', '') + ':' + Math.round(x.bitrate / 1000) + (x.audioTrack ? ':' + x.audioTrack.displayName : '') + (x.audioChannels ? ':' + x.audioChannels + 'ch' : '')).join(',');
-+        }
-+    } catch (e) { }
-+    return r;
-+};
-+function send(info) {
-+    fetch('http://127.0.0.1:47913/status?info=' + encodeURIComponent(info), { cache: 'no-store' }).catch(() => { });
-+}
-+setInterval(() => {
-+    const player = mainPlayer();
-+    const video = mainVideo();
-+    let id = null;
-+    try { id = player && player.getVideoData ? player.getVideoData().video_id : null; } catch (e) { }
-+    if (!id || id === lastId || !video || video.paused) return;
-+    lastId = id;
-+    setTimeout(() => {
-+        const out = [];
-+        try { out.push('levels=' + player.getAvailableQualityLevels().join('/')); } catch (e) { out.push('levels?'); }
-+        try { out.push('q=' + player.getPlaybackQuality()); } catch (e) { }
-+        try { out.push('vid=' + video.videoWidth + 'x' + video.videoHeight); } catch (e) { }
-+        try {
-+            const s = player.getStatsForNerds ? player.getStatsForNerds() : null;
-+            if (s) out.push('codecs=' + s.codecs + ' res=' + s.resolution + ' color=' + (s.color || s.hdr || ''));
-+        } catch (e) { out.push('nerds?'); }
-+        out.push('screen=' + screen.width + 'x' + screen.height + '@' + (window.devicePixelRatio || 1));
-+        const t = (type) => { try { return MediaSource.isTypeSupported(type) ? 1 : 0; } catch (e) { return 'x'; } };
-+        out.push('vp9_4k=' + t('video/webm; codecs="vp9"; width=3840; height=2160'));
-+        out.push('vp9hdr=' + t('video/webm; codecs="vp09.02.51.10.01.09.16.09.00"; width=3840; height=2160; eotf=smpte2084'));
-+        out.push('av1_4k=' + t('video/mp4; codecs="av01.0.12M.08"; width=3840; height=2160'));
-+        out.push('av1hdr=' + t('video/mp4; codecs="av01.0.12M.10.0.110.09.16.09.0"; width=3840; height=2160; eotf=smpte2084'));
-+        out.push('ec3=' + t('audio/mp4; codecs="ec-3"') + ' ac3=' + t('audio/mp4; codecs="ac-3"') + ' opus=' + t('audio/webm; codecs="opus"'));
-+        out.push('audio=' + (audioFormats[id] || '?'));
-+        send(out.join(' '));
-+    }, 8000);
-+}, 2000);
 diff --git a/mods/features/audioFlapClock.js b/mods/features/audioFlapClock.js
 new file mode 100644
 index 0000000..250569b
@@ -2519,6 +2464,87 @@ index 0000000..b9023bb
 +window.addEventListener('keyup', keyHandler, true);
 +
 +export { enableAudioOnly, disableAudioOnly, toggleAudioOnly };
+diff --git a/mods/features/audioQuality.js b/mods/features/audioQuality.js
+new file mode 100644
+index 0000000..1400b1f
+--- /dev/null
++++ b/mods/features/audioQuality.js
+@@ -0,0 +1,75 @@
++// Best picture and sound, all the time.
++// - Picture: TizenTube's "preferred quality" is set once to 2160p (it falls
++//   back to the highest quality a video has), instead of "auto", which drops
++//   when the network wavers. It can still be changed in TizenTube's settings.
++// - Sound: in each player response, only the best audio track of each codec
++//   and language is kept, and the "DRC" versions (compressed for loudness,
++//   flatter music) are dropped when the full-dynamics version exists. The
++//   player then never starts on a weak track before switching up.
++
++import { configRead, configWrite } from '../config.js';
++import { mainPlayer, mainVideo } from './audioMainVideo.js';
++
++const BEST_QUALITY_SET_KEY = 'tt-best-quality-set';
++
++try {
++    if (!localStorage.getItem(BEST_QUALITY_SET_KEY)) {
++        if (configRead('preferredVideoQuality') === 'auto') configWrite('preferredVideoQuality', '2160p');
++        localStorage.setItem(BEST_QUALITY_SET_KEY, '1');
++    }
++} catch (e) { }
++
++function trackKey(format) {
++    const codec = format.mimeType.split(';')[0];
++    const track = format.audioTrack ? format.audioTrack.id || format.audioTrack.displayName : '';
++    return codec + '|' + track + '|' + (format.audioChannels || 2);
++}
++
++// Keeps, per codec / language / channel count, the highest-bitrate audio
++// format, preferring non-DRC ones. Video formats are left untouched.
++export function bestAudioFormats(formats) {
++    const best = {};
++    for (const f of formats) {
++        if (!f || !f.mimeType || f.mimeType.indexOf('audio/') !== 0) continue;
++        const key = trackKey(f);
++        const current = best[key];
++        const better = !current ||
++            (current.isDrc && !f.isDrc) ||
++            (!!current.isDrc === !!f.isDrc && (f.bitrate || 0) > (current.bitrate || 0));
++        if (better) best[key] = f;
++    }
++    const keep = new Set(Object.keys(best).map((k) => best[k]));
++    return formats.filter((f) => !f || !f.mimeType || f.mimeType.indexOf('audio/') !== 0 || keep.has(f));
++}
++
++const origParse = JSON.parse;
++JSON.parse = function () {
++    const r = origParse.apply(this, arguments);
++    try {
++        const sd = r && r.streamingData;
++        if (sd && Array.isArray(sd.adaptiveFormats)) sd.adaptiveFormats = bestAudioFormats(sd.adaptiveFormats);
++    } catch (e) { }
++    return r;
++};
++
++// One line per video in the TV's system log (via the APK's local server):
++// the quality and codecs actually played, to check this and diagnose later.
++
++let reportedId = null;
++setInterval(() => {
++    const player = mainPlayer();
++    const video = mainVideo();
++    let id = null;
++    try {
++        id = player && player.getVideoData ? player.getVideoData().video_id : null;
++    } catch (e) { }
++    if (!id || id === reportedId || !video || video.paused || video.currentTime < 8) return;
++    reportedId = id;
++    let line = 'playing ' + id;
++    try {
++        line += ' q=' + player.getPlaybackQuality();
++        const s = player.getStatsForNerds ? player.getStatsForNerds() : null;
++        if (s) line += ' ' + s.codecs + ' ' + s.resolution + ' ' + s.color;
++    } catch (e) { }
++    fetch('http://127.0.0.1:47913/status?info=' + encodeURIComponent(line), { cache: 'no-store' }).catch(() => { });
++}, 3000);
 diff --git a/mods/features/audioSpectrum.js b/mods/features/audioSpectrum.js
 new file mode 100644
 index 0000000..724a237
@@ -3301,7 +3327,7 @@ index dc83f29..902884d 100644
          "chapters": {
              "title": "Chapitres",
 diff --git a/mods/userScript.js b/mods/userScript.js
-index f8a9c6e..c6b8df8 100644
+index f8a9c6e..efc4122 100644
 --- a/mods/userScript.js
 +++ b/mods/userScript.js
 @@ -19,6 +19,9 @@ import "./features/moreSubtitles.js";
@@ -3310,7 +3336,7 @@ index f8a9c6e..c6b8df8 100644
  import "./features/pictureInPicture.js";
 +import "./features/audioOnly.js";
 +import "./features/audioHue.js";
-+import "./features/audioDiag.js";
++import "./features/audioQuality.js";
  import "./features/preferredVideoQuality.js";
  import "./features/videoQueuing.js";
  import "./features/enableFeatures.js";
