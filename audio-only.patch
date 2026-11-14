@@ -754,10 +754,10 @@ index 0000000..5513018
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..1ed1701
+index 0000000..41f4f50
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,856 @@
+@@ -0,0 +1,911 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -1081,30 +1081,85 @@ index 0000000..1ed1701
 +
 +.tt-audio-bar {
 +    position: relative;
-+    height: 0.8vh;
-+    border-radius: 0.4vh;
-+    background: rgba(255, 255, 255, 0.22);
-+    overflow: hidden;
++    height: 1vh;
++    border-radius: 0.5vh;
++    background: rgba(255, 255, 255, 0.16);
 +    cursor: pointer;
++    transition: height 0.2s ease;
 +}
 +
++.tt-audio-buffered,
 +.tt-audio-fill {
++    position: absolute;
++    top: 0;
++    left: 0;
++    width: 100%;
 +    height: 100%;
-+    width: 0;
-+    border-radius: 0.4vh;
++    border-radius: inherit;
++    transform-origin: left center;
++    transform: scaleX(0);
++    transition: transform 0.5s linear;
++}
++
++/* Already downloaded. */
++.tt-audio-buffered {
++    background: rgba(255, 255, 255, 0.14);
++}
++
++/* Played: artwork colour (set in JS), white until known. */
++.tt-audio-fill {
 +    background: rgba(255, 255, 255, 0.92);
-+    transition: width 0.5s linear;
++}
++
++.tt-audio-knob {
++    position: absolute;
++    top: 50%;
++    left: -1vh;
++    width: 2vh;
++    height: 2vh;
++    border-radius: 50%;
++    background: #fff;
++    box-shadow: 0 0.3vh 1vh rgba(0, 0, 0, 0.5);
++    transform: translate(0, -50%);
++    transition: transform 0.5s linear, width 0.2s ease, height 0.2s ease, left 0.2s ease;
++}
++
++/* Just after a seek: thicker bar, bigger playhead, jump without sliding. */
++.tt-audio-seeking .tt-audio-bar {
++    height: 1.4vh;
++}
++
++.tt-audio-seeking .tt-audio-fill,
++.tt-audio-seeking .tt-audio-buffered {
++    transition: none;
++}
++
++.tt-audio-seeking .tt-audio-knob {
++    left: -1.4vh;
++    width: 2.8vh;
++    height: 2.8vh;
++    transition: width 0.2s ease, height 0.2s ease, left 0.2s ease;
++}
++
++.tt-audio-seeking .tt-audio-elapsed {
++    color: #fff;
 +}
 +
 +.tt-audio-times {
 +    display: flex;
 +    align-items: center;
 +    justify-content: space-between;
-+    margin-top: 1.4vh;
-+    font-size: 2vh;
++    margin-top: 1.6vh;
++    font-size: 2.3vh;
 +    font-weight: 600;
 +    font-variant-numeric: tabular-nums;
 +    color: rgba(255, 255, 255, 0.55);
++}
++
++/* Elapsed time stands out a little more than the remaining time. */
++.tt-audio-elapsed {
++    color: rgba(255, 255, 255, 0.85);
++    transition: color 0.2s ease;
 +}
 +
 +.tt-audio-badge {
@@ -1616,10 +1671,10 @@ index 0000000..1ed1701
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..c53c4f6
+index 0000000..5b8fa40
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,637 @@
+@@ -0,0 +1,675 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode, Down = Hue tile.
@@ -1784,12 +1839,18 @@ index 0000000..c53c4f6
 +    info.appendChild(els.spectrum.element);
 +
 +    const progress = el('div', 'tt-audio-progress');
++    // Track, then what is already downloaded, the played part (artwork colour)
++    // and a round playhead.
 +    els.bar = el('div', 'tt-audio-bar');
++    els.buffered = el('div', 'tt-audio-buffered');
 +    els.fill = el('div', 'tt-audio-fill');
++    els.knob = el('div', 'tt-audio-knob');
++    els.bar.appendChild(els.buffered);
 +    els.bar.appendChild(els.fill);
++    els.bar.appendChild(els.knob);
 +    progress.appendChild(els.bar);
 +    const times = el('div', 'tt-audio-times');
-+    els.current = el('span');
++    els.current = el('span', 'tt-audio-elapsed');
 +    els.badge = el('span', 'tt-audio-badge', t('player.audioOnly.badge'));
 +    els.duration = el('span');
 +    times.appendChild(els.current);
@@ -1936,12 +1997,31 @@ index 0000000..c53c4f6
 +    if (videoId && VIDEO_ID_RE.test(videoId)) {
 +        setArtwork(videoId);
 +        // Small thumbnail: enough to find the colour, quick to load.
-+        els.spectrum.setColorFromImage(`https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, (rgb) => els.clock.setColor(rgb));
++        els.spectrum.setColorFromImage(`https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, (rgb) => {
++            els.clock.setColor(rgb);
++            setAccent(rgb);
++        });
 +    } else {
 +        els.art.style.removeProperty('background-image');
 +        els.backdrop.style.removeProperty('background-image');
 +        els.backdrop2.style.removeProperty('background-image');
 +    }
++}
++
++// Played part and playhead in the artwork's colour (white for grey artwork).
++function setAccent(rgb) {
++    const [r, g, b] = rgb || [255, 255, 255];
++    els.fill.style.background = `linear-gradient(90deg, rgba(${r}, ${g}, ${b}, 0.75) 0%, rgb(${r}, ${g}, ${b}) 100%)`;
++    els.knob.style.boxShadow = `0 0 0 0.35vh rgba(${r}, ${g}, ${b}, 0.45), 0 0.3vh 1vh rgba(0, 0, 0, 0.5)`;
++}
++
++// After a seek (Left/Right), the bar grows for a moment and jumps at once.
++let seekTimer = null;
++function showSeek() {
++    const progress = els.bar.parentNode;
++    progress.classList.add('tt-audio-seeking');
++    clearTimeout(seekTimer);
++    seekTimer = setTimeout(() => progress.classList.remove('tt-audio-seeking'), 1200);
 +}
 +
 +function updateProgress() {
@@ -1951,7 +2031,19 @@ index 0000000..c53c4f6
 +    const current = video.currentTime;
 +    const ratio = isFinite(duration) && duration > 0 ? Math.min(current / duration, 1) : 0;
 +
-+    els.fill.style.width = `${ratio * 100}%`;
++    // Scaled and moved, not resized: runs on the GPU instead of re-laying out the page.
++    els.fill.style.transform = `scaleX(${ratio.toFixed(4)})`;
++    const barWidth = els.bar.clientWidth;
++    els.knob.style.transform = `translate(${Math.round(ratio * barWidth)}px, -50%)`;
++    let buffered = 0;
++    try {
++        const ranges = video.buffered;
++        for (let i = 0; i < ranges.length; i++) {
++            if (ranges.start(i) <= current + 1) buffered = Math.max(buffered, ranges.end(i));
++        }
++    } catch (e) { }
++    const bufferedRatio = isFinite(duration) && duration > 0 ? Math.min(buffered / duration, 1) : 0;
++    els.buffered.style.transform = `scaleX(${Math.max(ratio, bufferedRatio).toFixed(4)})`;
 +    els.current.textContent = formatTime(current);
 +    // Remaining time, as Apple Music shows it.
 +    els.duration.textContent = isFinite(duration) ? '-' + formatTime(duration - current) : t('player.audioOnly.live');
@@ -1995,6 +2087,7 @@ index 0000000..c53c4f6
 +    if (!video) return;
 +    const max = isFinite(video.duration) ? video.duration : Infinity;
 +    video.currentTime = Math.max(0, Math.min(video.currentTime + delta, max));
++    showSeek();
 +    updateProgress();
 +}
 +
