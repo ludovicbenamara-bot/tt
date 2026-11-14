@@ -162,10 +162,10 @@ index 0000000..2dfe900
 +}
 diff --git a/mods/features/audioHue.js b/mods/features/audioHue.js
 new file mode 100644
-index 0000000..17a021e
+index 0000000..9454356
 --- /dev/null
 +++ b/mods/features/audioHue.js
-@@ -0,0 +1,179 @@
+@@ -0,0 +1,192 @@
 +// Philips Hue ambiance: every time a new video starts (audio mode or not),
 +// the Hue strip is turned on in the artwork's dominant colour. The APK's
 +// local server talks to the Hue Bridge; the bridge address and key are set
@@ -203,9 +203,9 @@ index 0000000..17a021e
 +function loadPrefs() {
 +    try {
 +        const prefs = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
-+        return { off: !!prefs.off, bri: Number(prefs.bri) || 0 };
++        return { off: !!prefs.off, bri: Number(prefs.bri) || 0, rhythm: prefs.rhythm !== false };
 +    } catch (e) {
-+        return { off: false, bri: 0 };
++        return { off: false, bri: 0, rhythm: true };
 +    }
 +}
 +const prefs = loadPrefs();
@@ -217,7 +217,7 @@ index 0000000..17a021e
 +}
 +
 +// configured: null until known; reachable: false when the bridge did not answer.
-+const state = { configured: null, reachable: true, on: !prefs.off, bri: prefs.bri, name: '', rgb: null };
++const state = { configured: null, reachable: true, on: !prefs.off, bri: prefs.bri, name: '', rgb: null, rhythm: prefs.rhythm };
 +
 +function notify() {
 +    for (const fn of listeners) {
@@ -264,7 +264,7 @@ index 0000000..17a021e
 +// Pulse on the beat while a video plays and the light is not switched off.
 +function updateRhythm() {
 +    const video = mainVideo();
-+    const want = !!(video && !video.paused && !prefs.off && state.configured !== false && state.reachable);
++    const want = !!(prefs.rhythm && video && !video.paused && !prefs.off && state.configured !== false && state.reachable);
 +    if (want) {
 +        rhythmOn = true;
 +        call(`/rhythm?on=1&bri=${baseBrightness()}`).catch(() => { rhythmOn = false; });
@@ -272,6 +272,15 @@ index 0000000..17a021e
 +        rhythmOn = false;
 +        call('/rhythm?on=0').catch(() => { });
 +    }
++}
++
++// The "Rythme" button: pulse on the beat, or keep a steady light.
++function setRhythm(enabled) {
++    prefs.rhythm = enabled;
++    savePrefs();
++    state.rhythm = enabled;
++    notify();
++    updateRhythm();
 +}
 +
 +function setOn(on) {
@@ -307,6 +316,10 @@ index 0000000..17a021e
 +        setOn(!state.on);
 +    },
 +    setOn,
++    setRhythm,
++    toggleRhythm() {
++        setRhythm(!prefs.rhythm);
++    },
 +    stepBrightness,
 +    // fn(state) on every change; returns nothing (the screen lives as long as the page).
 +    subscribe(fn) {
@@ -347,10 +360,10 @@ index 0000000..17a021e
 +setInterval(check, CHECK_MS);
 diff --git a/mods/features/audioHueTile.js b/mods/features/audioHueTile.js
 new file mode 100644
-index 0000000..5a2a954
+index 0000000..0289303
 --- /dev/null
 +++ b/mods/features/audioHueTile.js
-@@ -0,0 +1,99 @@
+@@ -0,0 +1,131 @@
 +// Hue-app style light tile for the audio screen: bulb icon, light name,
 +// state and brightness, an on/off switch, and a brightness bar along the
 +// bottom. The tile takes the light's colour while it is on.
@@ -395,6 +408,14 @@ index 0000000..5a2a954
 +    const status = el('div', 'tt-hue-status');
 +    text.appendChild(name);
 +    text.appendChild(status);
++    // "Rythme": pulse on the beat of the music, or keep a steady light.
++    const rhythm = el('div', 'tt-hue-rhythm');
++    rhythm.appendChild(el('span', 'tt-hue-rhythm-note', '\u266A'));
++    rhythm.appendChild(el('span', 'tt-hue-rhythm-label', t('player.audioOnly.hueRhythm')));
++    rhythm.addEventListener('click', (evt) => {
++        evt.stopPropagation();
++        hue.toggleRhythm();
++    });
 +    const toggle = el('div', 'tt-hue-switch');
 +    toggle.appendChild(el('div', 'tt-hue-knob'));
 +    const briTrack = el('div', 'tt-hue-bri');
@@ -402,17 +423,26 @@ index 0000000..5a2a954
 +    briTrack.appendChild(briFill);
 +    tile.appendChild(iconWrap);
 +    tile.appendChild(text);
++    tile.appendChild(rhythm);
 +    tile.appendChild(toggle);
 +    tile.appendChild(briTrack);
 +    tile.addEventListener('click', () => hue.toggle());
 +
 +    let focused = false;
++    // Which part of the tile the remote is on: the light or the "Rythme" button.
++    let part = 'light';
++
++    function showFocus() {
++        tile.classList.toggle('tt-hue-focused', focused && part === 'light');
++        rhythm.classList.toggle('tt-hue-rhythm-focused', focused && part === 'rhythm');
++    }
 +
 +    function render(state) {
 +        tile.style.display = state.configured ? '' : 'none';
 +        name.textContent = state.name || t('player.audioOnly.hueName');
 +        const on = state.on && state.reachable;
 +        tile.classList.toggle('tt-hue-on', on);
++        rhythm.classList.toggle('tt-hue-rhythm-on', !!state.rhythm);
 +        if (!state.reachable) status.textContent = t('player.audioOnly.hueUnreachable');
 +        else status.textContent = on ? t('player.audioOnly.hueOn', { bri: hue.percent() }) : t('player.audioOnly.hueOff');
 +        briFill.style.width = on ? `${hue.percent()}%` : '0';
@@ -440,13 +470,28 @@ index 0000000..5a2a954
 +        },
 +        setFocused(value) {
 +            focused = !!value && !!hue.state.configured;
-+            tile.classList.toggle('tt-hue-focused', focused);
++            part = 'light';
++            showFocus();
 +        },
-+        toggle() {
-+            hue.toggle();
++        // OK: switches the light, or the beat pulsing on the "Rythme" button.
++        activate() {
++            if (part === 'rhythm') hue.toggleRhythm();
++            else hue.toggle();
++        },
++        // Down from the light goes to the "Rythme" button.
++        down() {
++            part = 'rhythm';
++            showFocus();
++        },
++        // Up from "Rythme" goes back to the light; returns false when already there.
++        up() {
++            if (part !== 'rhythm') return false;
++            part = 'light';
++            showFocus();
++            return true;
 +        },
 +        stepBrightness(direction) {
-+            hue.stepBrightness(direction);
++            if (part === 'light') hue.stepBrightness(direction);
 +        },
 +    };
 +}
@@ -795,10 +840,10 @@ index 0000000..5513018
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..2b6fbf0
+index 0000000..291e0f0
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,705 @@
+@@ -0,0 +1,737 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -1384,6 +1429,38 @@ index 0000000..2b6fbf0
 +    transition: width 0.3s ease;
 +}
 +
++/* "Rythme" button in the Hue tile: beat pulsing on (filled) or off (outline). */
++.tt-hue-rhythm {
++    flex: 0 0 auto;
++    display: flex;
++    align-items: center;
++    height: 2.6vh;
++    margin-right: 1.4vh;
++    padding: 0 1.1vh;
++    border-radius: 1.3vh;
++    box-shadow: inset 0 0 0 0.15vh rgba(255, 255, 255, 0.55);
++    color: rgba(255, 255, 255, 0.8);
++    font-size: 1.5vh;
++    font-weight: 700;
++    cursor: pointer;
++}
++
++.tt-hue-rhythm-note {
++    margin-right: 0.5vh;
++    font-size: 1.7vh;
++}
++
++.tt-hue-rhythm-on {
++    background: rgba(255, 255, 255, 0.92);
++    box-shadow: none;
++    color: rgba(0, 0, 0, 0.75);
++}
++
++.tt-hue-rhythm-focused {
++    outline: 0.3vh solid #fff;
++    outline-offset: 0.3vh;
++}
++
 +/* Burn-in protection (see audioBurnIn.js). */
 +.tt-audio-content,
 +.tt-audio-footer {
@@ -1506,10 +1583,10 @@ index 0000000..2b6fbf0
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..94209e4
+index 0000000..4ea8e89
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,628 @@
+@@ -0,0 +1,631 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode, Down = Hue tile.
@@ -2025,17 +2102,20 @@ index 0000000..94209e4
 +        return false;
 +    }
 +
-+    // Hue tile selected: OK switches the strip, Left/Right set the brightness.
++    // Hue tile selected: OK switches the strip, Left/Right set the brightness,
++    // Down goes to the "Rythme" button (OK there turns the beat pulsing on/off).
 +    if (els.hue.isFocused()) {
 +        let hueKey = true;
 +        if (evt.keyCode === 13 || evt.keyCode === 32) {
-+            if (evt.type === 'keydown') els.hue.toggle();
++            if (evt.type === 'keydown') els.hue.activate();
 +        } else if (evt.keyCode === 37 || evt.keyCode === 39) {
 +            if (evt.type === 'keydown') els.hue.stepBrightness(evt.keyCode === 39 ? 1 : -1);
-+        } else if (evt.keyCode === 38 || BACK_KEYS.indexOf(evt.keyCode) !== -1) {
++        } else if (evt.keyCode === 38) {
++            if (evt.type === 'keydown' && !els.hue.up()) els.hue.setFocused(false);
++        } else if (BACK_KEYS.indexOf(evt.keyCode) !== -1) {
 +            if (evt.type === 'keydown') els.hue.setFocused(false);
 +        } else if (evt.keyCode === 40) {
-+            // Already at the bottom.
++            if (evt.type === 'keydown') els.hue.down();
 +        } else {
 +            hueKey = false;
 +        }
@@ -2799,10 +2879,10 @@ index 3d2d10d..d9b7216 100644
              window.h5vcc.tizentube.EnterPIP();
              break;
 diff --git a/mods/translations/resources/en.json b/mods/translations/resources/en.json
-index 741901a..7e208c2 100644
+index 741901a..0722cd6 100644
 --- a/mods/translations/resources/en.json
 +++ b/mods/translations/resources/en.json
-@@ -294,6 +294,27 @@
+@@ -294,6 +294,28 @@
              "button": "Share",
              "qrCodeScanMessage": "Scan the QR code below to share this video."
          },
@@ -2822,6 +2902,7 @@ index 741901a..7e208c2 100644
 +            "hueOn": "On · {{bri}} %",
 +            "hueOff": "Off",
 +            "hueUnreachable": "Unreachable",
++            "hueRhythm": "Beat",
 +            "hueName": "Hue strip",
 +            "today": "Today",
 +            "live": "Live",
@@ -2831,10 +2912,10 @@ index 741901a..7e208c2 100644
          "chapters": {
              "title": "Chapters",
 diff --git a/mods/translations/resources/fr.json b/mods/translations/resources/fr.json
-index dc83f29..cba4996 100644
+index dc83f29..902884d 100644
 --- a/mods/translations/resources/fr.json
 +++ b/mods/translations/resources/fr.json
-@@ -294,6 +294,27 @@
+@@ -294,6 +294,28 @@
              "button": "Partager",
              "qrCodeScanMessage": "Scannez le code QR ci-dessous pour partager cette vidéo."
          },
@@ -2854,6 +2935,7 @@ index dc83f29..cba4996 100644
 +            "hueOn": "Allumée · {{bri}} %",
 +            "hueOff": "Éteinte",
 +            "hueUnreachable": "Injoignable",
++            "hueRhythm": "Rythme",
 +            "hueName": "Bande Hue",
 +            "today": "Auj.",
 +            "live": "En direct",
