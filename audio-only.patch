@@ -425,10 +425,10 @@ index 0000000..5a2a954
 +}
 diff --git a/mods/features/audioLedClock.js b/mods/features/audioLedClock.js
 new file mode 100644
-index 0000000..7a7a925
+index 0000000..f5fcfa6
 --- /dev/null
 +++ b/mods/features/audioLedClock.js
-@@ -0,0 +1,195 @@
+@@ -0,0 +1,218 @@
 +// LED dot-matrix clock, like a station / studio wall clock: the time in large
 +// dot digits on the left, then a ring of 60 dots lit up to the current second
 +// (with the seconds inside), and the date (weekday, day, month) on the right.
@@ -505,6 +505,8 @@ index 0000000..7a7a925
 +    const ctx = canvas.getContext('2d');
 +    const lang = String(navigator.language || 'fr').toLowerCase().startsWith('fr') ? 'fr' : 'en';
 +    let lastKey = '';
++    // Glow sprites by size (see sprite()); emptied when the colour changes.
++    let sprites = {};
 +    let LIT;
 +    let UNLIT;
 +    let GLOW;
@@ -514,11 +516,37 @@ index 0000000..7a7a925
 +        LIT = `rgb(${r}, ${g}, ${b})`;
 +        UNLIT = `rgba(${r}, ${g}, ${b}, 0.12)`;
 +        GLOW = `rgba(${r}, ${g}, ${b}, 0.55)`;
++        sprites = {};
 +        lastKey = '';
 +    }
 +    setColor(DEFAULT_RGB);
 +
-+    function dot(x, y, r, on) {
++    // A lit dot with its glow, drawn once per size and colour, then stamped:
++    // a canvas shadow blur on every dot was a large part of the screen's CPU use.
++    function sprite(r, glow) {
++        const key = `${r.toFixed(1)}:${glow.toFixed(1)}`;
++        if (sprites[key]) return sprites[key];
++        const size = Math.ceil((r + glow * 1.5) * 2);
++        const c = document.createElement('canvas');
++        c.width = size;
++        c.height = size;
++        const g = c.getContext('2d');
++        g.shadowColor = GLOW;
++        g.shadowBlur = glow;
++        g.fillStyle = LIT;
++        g.beginPath();
++        g.arc(size / 2, size / 2, r, 0, Math.PI * 2);
++        g.fill();
++        sprites[key] = c;
++        return c;
++    }
++
++    function dot(x, y, r, on, glow) {
++        if (on && glow > 0) {
++            const s = sprite(r, glow);
++            ctx.drawImage(s, x - s.width / 2, y - s.height / 2);
++            return;
++        }
 +        ctx.beginPath();
 +        ctx.arc(x, y, r, 0, Math.PI * 2);
 +        ctx.fillStyle = on ? LIT : UNLIT;
@@ -527,8 +555,7 @@ index 0000000..7a7a925
 +
 +    // Draws text with its top-left at (x, y); `pitch` is the dot spacing.
 +    function drawText(text, x, y, pitch, lit) {
-+        ctx.shadowColor = GLOW;
-+        ctx.shadowBlur = lit ? pitch * 0.9 : 0;
++        const glow = lit ? pitch * 0.9 : 0;
 +        let cx = x;
 +        for (const ch of text) {
 +            const glyph = FONT[ch] || FONT[' '];
@@ -536,12 +563,11 @@ index 0000000..7a7a925
 +                for (let col = 0; col < glyph[row].length; col++) {
 +                    const on = glyph[row][col] === '1';
 +                    if (!on && !lit) continue;
-+                    if (on) dot(cx + col * pitch + pitch / 2, y + row * pitch + pitch / 2, pitch * 0.36, lit !== false);
++                    if (on) dot(cx + col * pitch + pitch / 2, y + row * pitch + pitch / 2, pitch * 0.36, lit !== false, glow);
 +                }
 +            }
 +            cx += (glyph[0].length + 1) * pitch;
 +        }
-+        ctx.shadowBlur = 0;
 +    }
 +
 +    function draw(now) {
@@ -598,11 +624,8 @@ index 0000000..7a7a925
 +        for (let i = 0; i < 60; i++) {
 +            const a = (i / 60) * Math.PI * 2 - Math.PI / 2;
 +            const big = i % 5 === 0;
-+            ctx.shadowColor = GLOW;
-+            ctx.shadowBlur = i <= s ? H * 0.02 : 0;
-+            dot(ringCx + Math.cos(a) * ringR, ringCy + Math.sin(a) * ringR, H * (big ? 0.022 : 0.015), i <= s);
++            dot(ringCx + Math.cos(a) * ringR, ringCy + Math.sin(a) * ringR, H * (big ? 0.022 : 0.015), i <= s, H * 0.02);
 +        }
-+        ctx.shadowBlur = 0;
 +        const secPitch = H * 0.06;
 +        const secText = pad(s);
 +        drawText(secText, ringCx - textWidth(secText) * secPitch / 2, ringCy - 3.5 * secPitch, secPitch, true);
@@ -725,10 +748,10 @@ index 0000000..5513018
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..9dc049f
+index 0000000..edd14b4
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,708 @@
+@@ -0,0 +1,713 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -758,12 +781,14 @@ index 0000000..9dc049f
 +    height: 40%;
 +    opacity: 0.95;
 +    will-change: transform;
-+    animation: tt-audio-drift 28s ease-in-out infinite alternate;
++    /* The drift is slow: 4 steps a second look smooth and spare the GPU
++       (a continuous animation of these big layers cost ~70% CPU). */
++    animation: tt-audio-drift 28s steps(112) infinite alternate;
 +}
 +
 +.tt-audio-backdrop-2 {
 +    opacity: 0.5;
-+    animation: tt-audio-drift-2 36s ease-in-out infinite alternate;
++    animation: tt-audio-drift-2 36s steps(144) infinite alternate;
 +}
 +
 +.tt-audio-shade {
@@ -790,6 +815,7 @@ index 0000000..9dc049f
 +
 +.tt-audio-led-canvas {
 +    display: block;
++    will-change: transform;
 +    width: 100%;
 +    height: 100%;
 +}
@@ -1038,6 +1064,8 @@ index 0000000..9dc049f
 +    width: 100%;
 +    flex: 0 0 15vh;
 +    height: 15vh;
++    /* Own layer: redrawing it does not repaint the rest of the screen. */
++    will-change: transform;
 +    /* Centred in the room between the title and the progress bar. */
 +    margin: auto 0;
 +}
@@ -1053,10 +1081,15 @@ index 0000000..9dc049f
 +
 +.tt-audio-fill {
 +    height: 100%;
-+    width: 0;
++    width: 100%;
 +    border-radius: 0.4vh;
 +    background: rgba(255, 255, 255, 0.92);
-+    transition: width 0.5s linear;
++    /* Scaled, not resized: a transform runs on the GPU, while animating the
++       width re-lays out the page on every frame (a large CPU cost on the TV). */
++    transform-origin: left center;
++    transform: scaleX(0);
++    transition: transform 0.5s linear;
++    will-change: transform;
 +}
 +
 +.tt-audio-times {
@@ -1432,17 +1465,12 @@ index 0000000..9dc049f
 +    .tt-audio-weather-icon { width: 9vw; height: 9vw; }
 +    .tt-audio-led { width: 88vw; height: calc(88vw * 17 / 62); }
 +}
-+
-+/* TEMPORARY performance measurement. */
-+.tt-perf-noanim .tt-audio-backdrop { animation: none !important; }
-+.tt-perf-nofill .tt-audio-fill { transition: none !important; }
-+.tt-perf-hide .tt-audio-content, .tt-perf-hide .tt-audio-footer { display: none !important; }
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..941158c
+index 0000000..40ef313
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,657 @@
+@@ -0,0 +1,652 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode, Down = Hue tile.
@@ -1805,7 +1833,7 @@ index 0000000..941158c
 +    const current = video.currentTime;
 +    const ratio = isFinite(duration) && duration > 0 ? Math.min(current / duration, 1) : 0;
 +
-+    els.fill.style.width = `${ratio * 100}%`;
++    els.fill.style.transform = `scaleX(${ratio.toFixed(4)})`;
 +    els.current.textContent = formatTime(current);
 +    // Remaining time, as Apple Music shows it.
 +    els.duration.textContent = isFinite(duration) ? '-' + formatTime(duration - current) : t('player.audioOnly.live');
@@ -2060,11 +2088,6 @@ index 0000000..941158c
 +    els.burnIn.reset();
 +    els.spectrum.start();
 +    tickInterval = setInterval(tick, 500);
-+    // TEMPORARY performance measurement: switch parts off every 20 s.
-+    setTimeout(() => els.spectrum.stop(), 20000);
-+    setTimeout(() => overlay.classList.add('tt-perf-noanim'), 40000);
-+    setTimeout(() => { clearInterval(tickInterval); overlay.classList.add('tt-perf-nofill'); }, 60000);
-+    setTimeout(() => overlay.classList.add('tt-perf-hide'), 80000);
 +}
 +
 +function disableAudioOnly(reason) {
@@ -2102,10 +2125,10 @@ index 0000000..941158c
 +export { enableAudioOnly, disableAudioOnly, toggleAudioOnly };
 diff --git a/mods/features/audioSpectrum.js b/mods/features/audioSpectrum.js
 new file mode 100644
-index 0000000..4efe553
+index 0000000..c1fe112
 --- /dev/null
 +++ b/mods/features/audioSpectrum.js
-@@ -0,0 +1,331 @@
+@@ -0,0 +1,339 @@
 +// Winamp-style LED spectrum analyser for the audio-only screen: columns of
 +// LED segments on a dark dot matrix, white peak caps that hold then fall, and
 +// a blue dotted baseline. The segments take the artwork's dominant colour
@@ -2119,7 +2142,8 @@ index 0000000..4efe553
 +
 +const BANDS = 24;
 +const ROWS = 14;
-+const FRAME_MS = 33;
++// The TV sends new levels every 50 ms; drawing faster only costs CPU.
++const FRAME_MS = 50;
 +const GAP = 0.22;
 +const PEAK_HOLD_MS = 450;
 +const PEAK_FALL_PER_FRAME = 0.018;
@@ -2236,6 +2260,7 @@ index 0000000..4efe553
 +    let beatInterval = 500;
 +    let liveLevels = null;
 +    let liveAt = 0;
++    let settled = false;
 +    let pollTimer = null;
 +    let polling = false;
 +    let socket = null;
@@ -2360,8 +2385,11 @@ index 0000000..4efe553
 +        const rowH = (H - baseH * 2) / ROWS;
 +        const cellW = colW * (1 - GAP);
 +        const cellH = rowH * (1 - GAP);
-+        ctx.clearRect(0, 0, W, H);
 +        const live = now - liveAt < LIVE_MAX_AGE_MS ? liveLevels : null;
++        // Paused and everything has fallen: the picture no longer changes.
++        if (paused && settled) return;
++        ctx.clearRect(0, 0, W, H);
++        let moving = false;
 +
 +        for (let b = 0; b < BANDS; b++) {
 +            const target = live ? (paused ? 0 : live[b]) : targetLevel(b, now);
@@ -2375,6 +2403,7 @@ index 0000000..4efe553
 +                peaks[b] = Math.max(0, peaks[b] - PEAK_FALL_PER_FRAME);
 +            }
 +
++            if (levels[b] > 0.002 || peaks[b] > 0) moving = true;
 +            const lit = Math.round(levels[b] * ROWS);
 +            const peakRow = Math.min(ROWS - 1, Math.round(peaks[b] * ROWS));
 +            const x = b * colW + (colW - cellW) / 2;
@@ -2392,6 +2421,7 @@ index 0000000..4efe553
 +            ctx.fillRect(x, H - baseH, dot, dot);
 +            ctx.fillRect(x + cellW / 2, H - baseH, dot, dot);
 +        }
++        settled = !moving;
 +    }
 +
 +    return {
@@ -2410,6 +2440,7 @@ index 0000000..4efe553
 +            stopPolling();
 +        },
 +        setPaused(value) {
++            if (value !== paused) settled = false;
 +            paused = value;
 +        },
 +        // Take the LED colour from an image that sends CORS headers.
