@@ -1599,10 +1599,10 @@ index 0000000..291e0f0
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..4ea8e89
+index 0000000..12c275a
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,631 @@
+@@ -0,0 +1,644 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode, Down = Hue tile.
@@ -2199,6 +2199,19 @@ index 0000000..4ea8e89
 +    els.burnIn.reset();
 +    els.spectrum.start();
 +    tickInterval = setInterval(tick, 500);
++    // TEMPORARY diagnostics: state of every <video> 3 s after opening.
++    setTimeout(() => {
++        const vids = Array.prototype.slice.call(document.getElementsByTagName('video'));
++        const chosen = getVideo();
++        const info = vids.map((v, i) => {
++            const r = v.getBoundingClientRect();
++            const p = v.closest ? v.closest('.html5-video-player') : null;
++            let id = '';
++            try { id = p && p.getVideoData ? p.getVideoData().video_id : ''; } catch (e) { }
++            return `${i}${v === chosen ? '*' : ''}:p=${v.paused ? 1 : 0},t=${v.currentTime.toFixed(1)},d=${v.duration},rs=${v.readyState},a=${Math.round(r.width)}x${Math.round(r.height)},id=${id}`;
++        }).join(' | ');
++        fetch('http://127.0.0.1:47913/status?info=' + encodeURIComponent(location.hash.slice(0, 30) + ' ' + info), { cache: 'no-store' }).catch(() => { });
++    }, 3000);
 +}
 +
 +function disableAudioOnly(reason) {
