@@ -748,10 +748,10 @@ index 0000000..5513018
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..db68da1
+index 0000000..9656bef
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,719 @@
+@@ -0,0 +1,706 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -781,14 +781,14 @@ index 0000000..db68da1
 +    height: 40%;
 +    opacity: 0.95;
 +    will-change: transform;
-+    /* The drift is slow: 4 steps a second look smooth and spare the GPU
-+       (a continuous animation of these big layers cost ~70% CPU). */
-+    animation: tt-audio-drift 28s steps(112) infinite alternate;
++    /* Drifts slowly, moved once a second by the script (see driftBackdrop):
++       a CSS animation here kept the TV recompositing the screen at 60 fps. */
++    transform: translate(-10%, -8%) scale(3.4);
 +}
 +
 +.tt-audio-backdrop-2 {
 +    opacity: 0.5;
-+    animation: tt-audio-drift-2 36s steps(144) infinite alternate;
++    transform: translate(12%, 10%) scale(3.9) rotate(180deg);
 +}
 +
 +.tt-audio-shade {
@@ -831,6 +831,8 @@ index 0000000..db68da1
 +
 +/* Large artwork; shrinks a little when paused, like Apple Music. */
 +.tt-audio-art-wrap {
++    /* Own layer, so the spectrum's frames don't recomposite it. */
++    will-change: transform;
 +    flex: 0 0 auto;
 +    display: flex;
 +    flex-direction: column;
@@ -1088,7 +1090,8 @@ index 0000000..db68da1
 +       width re-lays out the page on every frame (a large CPU cost on the TV). */
 +    transform-origin: left center;
 +    transform: scaleX(0);
-+    transition: transform 0.5s linear;
++    /* No transition: it moves twice a second by tiny steps, and any continuous
++       animation makes this TV recomposite the whole screen at 60 fps. */
 +    will-change: transform;
 +}
 +
@@ -1201,16 +1204,6 @@ index 0000000..db68da1
 +
 +@keyframes tt-audio-blink {
 +    50% { opacity: 0.25; }
-+}
-+
-+@keyframes tt-audio-drift {
-+    0% { transform: translate(-10%, -8%) scale(3.4) rotate(0deg); }
-+    100% { transform: translate(10%, 8%) scale(3.9) rotate(8deg); }
-+}
-+
-+@keyframes tt-audio-drift-2 {
-+    0% { transform: translate(12%, 10%) scale(3.9) rotate(180deg); }
-+    100% { transform: translate(-12%, -10%) scale(3.4) rotate(200deg); }
 +}
 +
 +/* Philips Hue tile, drawn like a light in the Hue app. */
@@ -1465,18 +1458,12 @@ index 0000000..db68da1
 +    .tt-audio-weather-icon { width: 9vw; height: 9vw; }
 +    .tt-audio-led { width: 88vw; height: calc(88vw * 17 / 62); }
 +}
-+
-+/* TEMPORARY performance measurement. */
-+.tt-perf-b .tt-audio-backdrop { animation: none !important; }
-+.tt-perf-b .tt-audio-fill { transition: none !important; }
-+.tt-perf-c .tt-audio-backdrop, .tt-perf-c .tt-audio-shade { display: none !important; }
-+.tt-perf-d .tt-audio-art-wrap { display: none !important; }
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..510d8ab
+index 0000000..149963e
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,657 @@
+@@ -0,0 +1,666 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode, Down = Hue tile.
@@ -1850,8 +1837,22 @@ index 0000000..510d8ab
 +    els.spectrum.setPaused(video.paused);
 +}
 +
++// Slow drift of the two blurred backdrops (once a second, no CSS animation).
++function driftBackdrop() {
++    const t = Date.now() / 1000;
++    const a = (Math.sin(t * Math.PI / 28) + 1) / 2;
++    const b = (Math.sin(t * Math.PI / 36) + 1) / 2;
++    els.backdrop.style.transform =
++        `translate(${-10 + 20 * a}%, ${-8 + 16 * a}%) scale(${3.4 + 0.5 * a}) rotate(${8 * a}deg)`;
++    els.backdrop2.style.transform =
++        `translate(${12 - 24 * b}%, ${10 - 20 * b}%) scale(${3.9 - 0.5 * b}) rotate(${180 + 20 * b}deg)`;
++}
++
++let driftTicks = 0;
++
 +function tick() {
 +    els.burnIn.tick();
++    if (++driftTicks % 2 === 0) driftBackdrop();
 +    els.clock.update();
 +    // Leave audio mode on its own when the player is closed.
 +    const player = getPlayer();
@@ -2094,11 +2095,6 @@ index 0000000..510d8ab
 +    els.burnIn.reset();
 +    els.spectrum.start();
 +    tickInterval = setInterval(tick, 500);
-+    // TEMPORARY performance measurement.
-+    setTimeout(() => overlay.classList.add('tt-perf-b'), 20000);
-+    setTimeout(() => overlay.classList.add('tt-perf-c'), 40000);
-+    setTimeout(() => overlay.classList.add('tt-perf-d'), 60000);
-+    setTimeout(() => els.spectrum.stop(), 80000);
 +}
 +
 +function disableAudioOnly(reason) {
