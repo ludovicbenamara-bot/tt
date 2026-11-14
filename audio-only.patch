@@ -1436,13 +1436,14 @@ index 0000000..2b6fbf0
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..0a0cdf0
+index 0000000..bdc8632
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,606 @@
+@@ -0,0 +1,620 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode, Down = Hue tile.
++// The red key on the remote switches audio mode on and off from any video.
 +
 +import { t } from 'i18next';
 +import css from './audioOnly.css';
@@ -1464,6 +1465,8 @@ index 0000000..0a0cdf0
 +// "Previous" restarts the track when we are past this point, like Apple Music.
 +const RESTART_THRESHOLD_S = 3;
 +const BACK_KEYS = [8, 27, 461, 10009];
++// Red colour key: DOM code on TV browsers (Cobalt), and Android's raw PROG_RED.
++const RED_KEYS = [403, 183];
 +const VIDEO_ID_RE = /^[\w-]{11}$/;
 +// The player briefly reports no video while it reloads; only leave audio mode
 +// after it has been gone for this many ticks (500 ms each).
@@ -1916,6 +1919,17 @@ index 0000000..0a0cdf0
 +}
 +
 +function keyHandler(evt) {
++    // Red key: direct switch, from the video or from the audio screen.
++    if (RED_KEYS.indexOf(evt.keyCode) !== -1 && (window.isAudioOnly || getVideo())) {
++        if (evt.type === 'keydown') {
++            if (window.isAudioOnly) disableAudioOnly('red key');
++            else enableAudioOnly();
++        }
++        evt.preventDefault();
++        evt.stopPropagation();
++        return false;
++    }
++
 +    if (!window.isAudioOnly) {
 +        if (evt.keyCode === 13 && isAudioButtonFocused()) {
 +            if (evt.type === 'keydown') toggleAudioOnly();
