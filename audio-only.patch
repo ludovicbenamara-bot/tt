@@ -650,18 +650,22 @@ index 0000000..f5fcfa6
 +}
 diff --git a/mods/features/audioMainVideo.js b/mods/features/audioMainVideo.js
 new file mode 100644
-index 0000000..e8a52d9
+index 0000000..6e5c24a
 --- /dev/null
 +++ b/mods/features/audioMainVideo.js
-@@ -0,0 +1,31 @@
-+// YouTube TV can keep more than one <video> in the page (e.g. a preview left
-+// playing behind the watch page), so "the first <video>" is not always the one
-+// on screen. The main video is the one playing, then the largest on screen.
+@@ -0,0 +1,37 @@
++// YouTube TV can keep more than one <video> in the page (e.g. a stalled
++// preview that still reports "playing"), so "the first <video>" is not always
++// the one heard. The main video is the one whose time is moving, then one not
++// paused, then the largest on screen.
 +
 +function area(el) {
 +    const r = el.getBoundingClientRect();
 +    return Math.max(0, r.width) * Math.max(0, r.height);
 +}
++
++// Last currentTime seen for each element (the audio screen asks twice a second).
++const lastTimes = new WeakMap();
 +
 +export function mainVideo() {
 +    const videos = document.getElementsByTagName('video');
@@ -670,8 +674,10 @@ index 0000000..e8a52d9
 +    let bestScore = -1;
 +    for (let i = 0; i < videos.length; i++) {
 +        const v = videos[i];
-+        // Playing beats paused; among equals, the biggest on screen wins.
-+        const score = (v.paused ? 0 : 1e9) + area(v);
++        const before = lastTimes.get(v);
++        lastTimes.set(v, v.currentTime);
++        const moving = before !== undefined && v.currentTime !== before;
++        const score = (moving ? 2e9 : 0) + (v.paused ? 0 : 1e9) + area(v);
 +        if (score > bestScore) {
 +            best = v;
 +            bestScore = score;
