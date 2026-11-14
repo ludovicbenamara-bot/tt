@@ -2169,39 +2169,20 @@ index 0000000..6ff9d44
 +export { enableAudioOnly, disableAudioOnly, toggleAudioOnly };
 diff --git a/mods/features/audioSpectrum.js b/mods/features/audioSpectrum.js
 new file mode 100644
-index 0000000..c1fe112
+index 0000000..6e48e36
 --- /dev/null
 +++ b/mods/features/audioSpectrum.js
-@@ -0,0 +1,339 @@
-+// Winamp-style LED spectrum analyser for the audio-only screen: columns of
-+// LED segments on a dark dot matrix, white peak caps that hold then fall, and
-+// a blue dotted baseline. The segments take the artwork's dominant colour
-+// (green until one is found).
-+// Cobalt plays sound through the TV's native player, so the page cannot
-+// analyse it. The modified APK runs a small server on 127.0.0.1 that serves
-+// Android's Visualizer spectrum of the output mix (YouTube's CSP allows
-+// connect-src to localhost): while it answers, the bands follow the real
-+// music. Otherwise they follow a simulated signal: a beat pulse, a bass-heavy
-+// envelope and per-band noise, with fast attack and slow release.
+@@ -0,0 +1,216 @@
++// Winamp-style LED spectrum for the audio-only screen, as a still picture:
++// columns of LED segments on a dark dot matrix, white peak caps and a blue
++// dotted baseline, in the artwork's dominant colour (green until one is found).
++// It does not move: it is drawn once per track (shape seeded by the track),
++// once when the colour is known, and again only on pause or a size change.
++// No timer, no audio capture: it costs no CPU while the music plays.
 +
 +const BANDS = 24;
 +const ROWS = 14;
-+// The TV sends new levels every 50 ms; drawing faster only costs CPU.
-+const FRAME_MS = 50;
 +const GAP = 0.22;
-+const PEAK_HOLD_MS = 450;
-+const PEAK_FALL_PER_FRAME = 0.018;
-+const ATTACK = 0.55;
-+const RELEASE = 0.12;
-+const SPECTRUM_URL = `http://127.0.0.1:47913/bands?n=${BANDS}&from=page`;
-+// One connection that stays open and receives every frame (APKs since 2026-11-14);
-+// polling SPECTRUM_URL is the fallback.
-+const STREAM_URL = `ws://127.0.0.1:47913/bands-stream?n=${BANDS}`;
-+const POLL_MS = 50;
-+// Live data older than this is ignored (server gone, app paused...).
-+const LIVE_MAX_AGE_MS = 600;
-+// After a failed request, wait this long before trying again.
-+const RETRY_MS = 5000;
 +
 +const COLORS = {
 +    off: 'rgba(120, 140, 120, 0.16)',
@@ -2282,215 +2263,110 @@ index 0000000..c1fe112
 +    img.src = url;
 +}
 +
++// Small deterministic generator, so a track always gets the same picture.
++function seeded(seed) {
++    let x = seed >>> 0 || 1;
++    return () => {
++        x ^= x << 13;
++        x ^= x >>> 17;
++        x ^= x << 5;
++        return (x >>> 0) / 4294967296;
++    };
++}
++
++function hashString(text) {
++    let h = 2166136261;
++    for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
++    return h >>> 0;
++}
++
++// A plausible frozen spectrum: louder lows, a bump in the mids, quieter highs.
++function shapeFor(seed) {
++    const rnd = seeded(seed);
++    const levels = [];
++    const peaks = [];
++    for (let b = 0; b < BANDS; b++) {
++        const x = b / (BANDS - 1);
++        const envelope = 0.78 - 0.38 * x + 0.14 * Math.sin(x * Math.PI);
++        const level = Math.max(0.08, Math.min(0.95, envelope * (0.7 + 0.45 * rnd())));
++        levels.push(level);
++        peaks.push(Math.min(1, level + 0.06 + 0.12 * rnd()));
++    }
++    return { levels, peaks };
++}
++
 +export function createSpectrum() {
 +    const canvas = document.createElement('canvas');
 +    canvas.className = 'tt-audio-spectrum';
 +    const ctx = canvas.getContext('2d');
 +
-+    const levels = new Array(BANDS).fill(0);
-+    const peaks = new Array(BANDS).fill(0);
-+    const peakHeldAt = new Array(BANDS).fill(0);
-+    const phases = Array.from({ length: BANDS }, () => Math.random() * Math.PI * 2);
++    let shape = shapeFor(1);
 +    let rowColors = [];
 +    function setGradient(low, high) {
 +        rowColors = Array.from({ length: ROWS }, (_, r) => mix(low, high, r / (ROWS - 1)));
 +    }
 +    setGradient(COLORS.low, COLORS.high);
 +    let colorRequest = 0;
-+
-+    let timer = null;
 +    let paused = false;
-+    let beatAt = 0;
-+    let beatInterval = 500;
-+    let liveLevels = null;
-+    let liveAt = 0;
-+    let settled = false;
-+    let pollTimer = null;
-+    let polling = false;
-+    let socket = null;
-+    let streamUnsupported = false;
-+    let running = false;
-+
-+    function onBands(text) {
-+        const values = text ? text.split(',') : [];
-+        if (values.length === BANDS) {
-+            liveLevels = values.map((v) => (+v || 0) / 255);
-+            liveAt = Date.now();
-+        }
-+    }
-+
-+    function openStream() {
-+        let received = false;
-+        try {
-+            socket = new WebSocket(STREAM_URL);
-+        } catch (e) {
-+            streamUnsupported = true;
-+            startPolling();
-+            return;
-+        }
-+        socket.onmessage = (evt) => {
-+            received = true;
-+            onBands(evt.data);
-+        };
-+        socket.onclose = () => {
-+            socket = null;
-+            if (!running) return;
-+            if (!received) {
-+                // Older APK without the stream: poll instead.
-+                streamUnsupported = true;
-+                startPolling();
-+            } else {
-+                pollTimer = setTimeout(startLive, RETRY_MS);
-+            }
-+        };
-+    }
-+
-+    function closeStream() {
-+        if (!socket) return;
-+        socket.onclose = null;
-+        try {
-+            socket.close();
-+        } catch (e) { }
-+        socket = null;
-+    }
-+
-+    function startLive() {
-+        if (!streamUnsupported && typeof WebSocket === 'function') openStream();
-+        else startPolling();
-+    }
-+
-+    function poll() {
-+        if (polling) return;
-+        polling = true;
-+        fetch(SPECTRUM_URL, { cache: 'no-store' })
-+            .then((r) => (r.ok ? r.text() : ''))
-+            .then((text) => {
-+                onBands(text);
-+                polling = false;
-+            }, () => {
-+                polling = false;
-+                // No server (original APK) or not ready yet: retry later.
-+                clearInterval(pollTimer);
-+                pollTimer = setTimeout(startPolling, RETRY_MS);
-+            });
-+    }
-+
-+    function startPolling() {
-+        clearTimeout(pollTimer);
-+        clearInterval(pollTimer);
-+        pollTimer = setInterval(poll, POLL_MS);
-+    }
-+
-+    function stopPolling() {
-+        clearTimeout(pollTimer);
-+        clearInterval(pollTimer);
-+        pollTimer = null;
-+    }
-+
-+    function resize() {
-+        const ratio = window.devicePixelRatio || 1;
-+        const w = Math.round(canvas.clientWidth * ratio);
-+        const h = Math.round(canvas.clientHeight * ratio);
-+        if (w && h && (canvas.width !== w || canvas.height !== h)) {
-+            canvas.width = w;
-+            canvas.height = h;
-+        }
-+    }
-+
-+    function targetLevel(band, now) {
-+        if (paused) return 0;
-+        if (now - beatAt > beatInterval) {
-+            beatAt = now;
-+            beatInterval = 420 + Math.random() * 180;
-+        }
-+        const beat = Math.max(0, 1 - (now - beatAt) / 260);
-+        const x = band / (BANDS - 1);
-+        // Louder lows, a bump in the mids, quieter highs.
-+        const envelope = 0.7 - 0.3 * x + 0.12 * Math.sin(x * Math.PI);
-+        // Two slow oscillators per band so neighbouring bands drift apart.
-+        const wobble = 0.5 + 0.25 * Math.sin(now / (160 + band * 29) + phases[band]) +
-+            0.25 * Math.sin(now / (410 + band * 17) - phases[band] * 2);
-+        const noise = Math.random();
-+        const bassKick = beat * Math.max(0, 1 - x * 1.6) * 0.55;
-+        return Math.min(1, envelope * wobble * wobble * 1.3 + noise * noise * 0.3 + bassKick);
-+    }
++    let shown = false;
 +
 +    function draw() {
-+        const now = Date.now();
-+        // Nothing to draw while hidden (e.g. ambient mode).
-+        if (canvas.offsetParent === null) return;
-+        resize();
-+        const W = canvas.width;
-+        const H = canvas.height;
++        if (!shown || canvas.offsetParent === null) return;
++        const ratio = window.devicePixelRatio || 1;
++        const W = Math.round(canvas.clientWidth * ratio);
++        const H = Math.round(canvas.clientHeight * ratio);
 +        if (!W || !H) return;
++        canvas.width = W;
++        canvas.height = H;
 +
 +        const colW = W / BANDS;
 +        const baseH = H * 0.06;
 +        const rowH = (H - baseH * 2) / ROWS;
 +        const cellW = colW * (1 - GAP);
 +        const cellH = rowH * (1 - GAP);
-+        const live = now - liveAt < LIVE_MAX_AGE_MS ? liveLevels : null;
-+        // Paused and everything has fallen: the picture no longer changes.
-+        if (paused && settled) return;
-+        ctx.clearRect(0, 0, W, H);
-+        let moving = false;
++        // Paused: the bars drop to a low idle level, like a silent analyser.
++        const scale = paused ? 0.18 : 1;
 +
 +        for (let b = 0; b < BANDS; b++) {
-+            const target = live ? (paused ? 0 : live[b]) : targetLevel(b, now);
-+            const k = target > levels[b] ? ATTACK : RELEASE;
-+            levels[b] += (target - levels[b]) * k;
-+
-+            if (levels[b] >= peaks[b]) {
-+                peaks[b] = levels[b];
-+                peakHeldAt[b] = now;
-+            } else if (now - peakHeldAt[b] > PEAK_HOLD_MS) {
-+                peaks[b] = Math.max(0, peaks[b] - PEAK_FALL_PER_FRAME);
-+            }
-+
-+            if (levels[b] > 0.002 || peaks[b] > 0) moving = true;
-+            const lit = Math.round(levels[b] * ROWS);
-+            const peakRow = Math.min(ROWS - 1, Math.round(peaks[b] * ROWS));
++            const lit = Math.round(shape.levels[b] * scale * ROWS);
++            const peakRow = Math.min(ROWS - 1, Math.round(shape.peaks[b] * scale * ROWS));
 +            const x = b * colW + (colW - cellW) / 2;
 +            for (let r = 0; r < ROWS; r++) {
 +                const y = H - baseH * 2 - (r + 1) * rowH + (rowH - cellH) / 2;
 +                if (r < lit) ctx.fillStyle = rowColors[r];
-+                else if (r === peakRow && peaks[b] > 0.04) ctx.fillStyle = COLORS.peak;
++                else if (r === peakRow) ctx.fillStyle = COLORS.peak;
 +                else ctx.fillStyle = COLORS.off;
 +                ctx.fillRect(x, y, cellW, r === peakRow && r >= lit ? cellH * 0.55 : cellH);
 +            }
-+
 +            // Blue dotted baseline, two dots per band.
 +            ctx.fillStyle = COLORS.base;
 +            const dot = Math.min(baseH, colW * 0.18);
 +            ctx.fillRect(x, H - baseH, dot, dot);
 +            ctx.fillRect(x + cellW / 2, H - baseH, dot, dot);
 +        }
-+        settled = !moving;
 +    }
 +
 +    return {
 +        element: canvas,
++        // The audio screen is shown: draw (once, it has its size now).
 +        start() {
-+            if (timer) return;
-+            timer = setInterval(draw, FRAME_MS);
-+            running = true;
-+            startLive();
++            shown = true;
++            draw();
 +        },
 +        stop() {
-+            clearInterval(timer);
-+            timer = null;
-+            running = false;
-+            closeStream();
-+            stopPolling();
++            shown = false;
 +        },
 +        setPaused(value) {
-+            if (value !== paused) settled = false;
++            if (value === paused) return;
 +            paused = value;
++            draw();
 +        },
-+        // Take the LED colour from an image that sends CORS headers.
-+        // onColor(rgb | null): the LED colour found, for other widgets.
++        // Take the LED colour from an image that sends CORS headers, and give
++        // this track its own frozen shape. onColor(rgb | null) for other widgets.
 +        setColorFromImage(url, onColor) {
 +            const request = ++colorRequest;
++            shape = shapeFor(hashString(url));
++            draw();
 +            const img = new Image();
 +            img.crossOrigin = 'anonymous';
 +            img.onload = () => {
@@ -2507,6 +2383,7 @@ index 0000000..c1fe112
 +                    setGradient(hslToRgb(hue, 0.72, 0.42), hslToRgb(hue, 0.85, 0.66));
 +                    if (onColor) onColor(hslToRgb(hue, 0.9, 0.58));
 +                }
++                draw();
 +            };
 +            img.src = url;
 +        },
