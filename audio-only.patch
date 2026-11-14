@@ -2062,10 +2062,10 @@ index 0000000..bdc8632
 +export { enableAudioOnly, disableAudioOnly, toggleAudioOnly };
 diff --git a/mods/features/audioSpectrum.js b/mods/features/audioSpectrum.js
 new file mode 100644
-index 0000000..acd42e0
+index 0000000..4efe553
 --- /dev/null
 +++ b/mods/features/audioSpectrum.js
-@@ -0,0 +1,278 @@
+@@ -0,0 +1,331 @@
 +// Winamp-style LED spectrum analyser for the audio-only screen: columns of
 +// LED segments on a dark dot matrix, white peak caps that hold then fall, and
 +// a blue dotted baseline. The segments take the artwork's dominant colour
@@ -2086,6 +2086,9 @@ index 0000000..acd42e0
 +const ATTACK = 0.55;
 +const RELEASE = 0.12;
 +const SPECTRUM_URL = `http://127.0.0.1:47913/bands?n=${BANDS}&from=page`;
++// One connection that stays open and receives every frame (APKs since 2026-11-14);
++// polling SPECTRUM_URL is the fallback.
++const STREAM_URL = `ws://127.0.0.1:47913/bands-stream?n=${BANDS}`;
 +const POLL_MS = 50;
 +// Live data older than this is ignored (server gone, app paused...).
 +const LIVE_MAX_AGE_MS = 600;
@@ -2195,6 +2198,57 @@ index 0000000..acd42e0
 +    let liveAt = 0;
 +    let pollTimer = null;
 +    let polling = false;
++    let socket = null;
++    let streamUnsupported = false;
++    let running = false;
++
++    function onBands(text) {
++        const values = text ? text.split(',') : [];
++        if (values.length === BANDS) {
++            liveLevels = values.map((v) => (+v || 0) / 255);
++            liveAt = Date.now();
++        }
++    }
++
++    function openStream() {
++        let received = false;
++        try {
++            socket = new WebSocket(STREAM_URL);
++        } catch (e) {
++            streamUnsupported = true;
++            startPolling();
++            return;
++        }
++        socket.onmessage = (evt) => {
++            received = true;
++            onBands(evt.data);
++        };
++        socket.onclose = () => {
++            socket = null;
++            if (!running) return;
++            if (!received) {
++                // Older APK without the stream: poll instead.
++                streamUnsupported = true;
++                startPolling();
++            } else {
++                pollTimer = setTimeout(startLive, RETRY_MS);
++            }
++        };
++    }
++
++    function closeStream() {
++        if (!socket) return;
++        socket.onclose = null;
++        try {
++            socket.close();
++        } catch (e) { }
++        socket = null;
++    }
++
++    function startLive() {
++        if (!streamUnsupported && typeof WebSocket === 'function') openStream();
++        else startPolling();
++    }
 +
 +    function poll() {
 +        if (polling) return;
@@ -2202,11 +2256,7 @@ index 0000000..acd42e0
 +        fetch(SPECTRUM_URL, { cache: 'no-store' })
 +            .then((r) => (r.ok ? r.text() : ''))
 +            .then((text) => {
-+                const values = text ? text.split(',') : [];
-+                if (values.length === BANDS) {
-+                    liveLevels = values.map((v) => (+v || 0) / 255);
-+                    liveAt = Date.now();
-+                }
++                onBands(text);
 +                polling = false;
 +            }, () => {
 +                polling = false;
@@ -2309,11 +2359,14 @@ index 0000000..acd42e0
 +        start() {
 +            if (timer) return;
 +            timer = setInterval(draw, FRAME_MS);
-+            startPolling();
++            running = true;
++            startLive();
 +        },
 +        stop() {
 +            clearInterval(timer);
 +            timer = null;
++            running = false;
++            closeStream();
 +            stopPolling();
 +        },
 +        setPaused(value) {
