@@ -162,10 +162,10 @@ index 0000000..2dfe900
 +}
 diff --git a/mods/features/audioHue.js b/mods/features/audioHue.js
 new file mode 100644
-index 0000000..3760d73
+index 0000000..7d9d1ae
 --- /dev/null
 +++ b/mods/features/audioHue.js
-@@ -0,0 +1,152 @@
+@@ -0,0 +1,153 @@
 +// Philips Hue ambiance: every time a new video starts (audio mode or not),
 +// the Hue strip is turned on in the artwork's dominant colour. The APK's
 +// local server talks to the Hue Bridge; the bridge address and key are set
@@ -175,6 +175,7 @@ index 0000000..3760d73
 +// it stays off (new videos don't turn it back on) until switched on again.
 +
 +import { colorFromImage } from './audioSpectrum.js';
++import { mainVideo, mainPlayer } from './audioMainVideo.js';
 +
 +const HUE_URL = 'http://127.0.0.1:47913/hue';
 +const CHECK_MS = 2000;
@@ -294,7 +295,7 @@ index 0000000..3760d73
 +};
 +
 +function currentVideoId() {
-+    const player = document.querySelector('.html5-video-player');
++    const player = mainPlayer();
 +    try {
 +        const data = player && player.getVideoData ? player.getVideoData() : null;
 +        return data && data.video_id;
@@ -306,7 +307,7 @@ index 0000000..3760d73
 +function check() {
 +    const videoId = currentVideoId();
 +    if (!videoId || videoId === lastVideoId || !VIDEO_ID_RE.test(videoId)) return;
-+    const video = document.querySelector('video');
++    const video = mainVideo();
 +    if (!video || video.paused) return;
 +    lastVideoId = videoId;
 +    colorFromImage(`https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, (rgb) => {
@@ -646,6 +647,43 @@ index 0000000..f5fcfa6
 +            draw(now);
 +        },
 +    };
++}
+diff --git a/mods/features/audioMainVideo.js b/mods/features/audioMainVideo.js
+new file mode 100644
+index 0000000..e8a52d9
+--- /dev/null
++++ b/mods/features/audioMainVideo.js
+@@ -0,0 +1,31 @@
++// YouTube TV can keep more than one <video> in the page (e.g. a preview left
++// playing behind the watch page), so "the first <video>" is not always the one
++// on screen. The main video is the one playing, then the largest on screen.
++
++function area(el) {
++    const r = el.getBoundingClientRect();
++    return Math.max(0, r.width) * Math.max(0, r.height);
++}
++
++export function mainVideo() {
++    const videos = document.getElementsByTagName('video');
++    if (videos.length <= 1) return videos[0] || null;
++    let best = null;
++    let bestScore = -1;
++    for (let i = 0; i < videos.length; i++) {
++        const v = videos[i];
++        // Playing beats paused; among equals, the biggest on screen wins.
++        const score = (v.paused ? 0 : 1e9) + area(v);
++        if (score > bestScore) {
++            best = v;
++            bestScore = score;
++        }
++    }
++    return best;
++}
++
++export function mainPlayer() {
++    const video = mainVideo();
++    const player = video && video.closest ? video.closest('.html5-video-player') : null;
++    return player || document.querySelector('.html5-video-player');
 +}
 diff --git a/mods/features/audioMap.js b/mods/features/audioMap.js
 new file mode 100644
@@ -1459,10 +1497,10 @@ index 0000000..b091574
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..bcdd623
+index 0000000..6ff9d44
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,659 @@
+@@ -0,0 +1,660 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode, Down = Hue tile.
@@ -1476,6 +1514,7 @@ index 0000000..bcdd623
 +import { createLedClock } from './audioLedClock.js';
 +import { createBurnInGuard } from './audioBurnIn.js';
 +import { createHueTile } from './audioHueTile.js';
++import { mainVideo, mainPlayer } from './audioMainVideo.js';
 +
 +const SEEK_STEP = 10;
 +// Channel up/down on the remote: Starboard key codes, Android's raw key codes,
@@ -1514,11 +1553,11 @@ index 0000000..bcdd623
 +}
 +
 +function getPlayer() {
-+    return document.querySelector('.html5-video-player');
++    return mainPlayer();
 +}
 +
 +function getVideo() {
-+    return document.querySelector('video');
++    return mainVideo();
 +}
 +
 +function formatTime(seconds) {
