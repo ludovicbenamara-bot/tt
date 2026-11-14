@@ -162,26 +162,22 @@ index 0000000..2dfe900
 +}
 diff --git a/mods/features/audioFlapClock.js b/mods/features/audioFlapClock.js
 new file mode 100644
-index 0000000..d327e5b
+index 0000000..250569b
 --- /dev/null
 +++ b/mods/features/audioFlapClock.js
-@@ -0,0 +1,106 @@
+@@ -0,0 +1,92 @@
 +// Airport split-flap clock for the audio-only screen: hours / minutes /
-+// seconds on the top row, day / month / year below, each character on its own
-+// dark flap card with the hinge line across the middle, small labels above
-+// each group. The colons take the artwork's colour (yellow until one is set).
++// seconds, each digit on its own dark flap card with the hinge line across the
++// middle, a small label above each group (time only, no date). The colons
++// take the artwork's colour (yellow until one is set).
 +// No flip animation (the TV recomposites the whole screen for any moving
 +// layer): only the cards whose character changed are updated, once a second.
 +
 +const DEFAULT_RGB = [245, 214, 10];
 +
 +const LABELS = {
-+    fr: { h: 'HEURES', m: 'MINUTES', s: 'SECONDES', day: 'JOUR', month: 'MOIS', year: 'ANNÉE' },
-+    en: { h: 'HRS', m: 'MIN', s: 'SEC', day: 'DAY', month: 'MONTH', year: 'YEAR' },
-+};
-+const MONTHS = {
-+    fr: ['JAN', 'FEV', 'MAR', 'AVR', 'MAI', 'JUN', 'JUL', 'AOU', 'SEP', 'OCT', 'NOV', 'DEC'],
-+    en: ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'],
++    fr: { h: 'HEURES', m: 'MINUTES', s: 'SECONDES' },
++    en: { h: 'HRS', m: 'MIN', s: 'SEC' },
 +};
 +
 +function el(tag, className, text) {
@@ -234,18 +230,9 @@ index 0000000..d327e5b
 +    top.appendChild(colons[1]);
 +    top.appendChild(s.wrap);
 +
-+    const bottom = el('div', 'tt-flap-row');
-+    const day = group(L.day, 2);
-+    const month = group(L.month, 3);
-+    const year = group(L.year, 2);
-+    bottom.appendChild(day.wrap);
-+    bottom.appendChild(month.wrap);
-+    bottom.appendChild(year.wrap);
-+
 +    card.appendChild(top);
-+    card.appendChild(bottom);
 +
-+    const cards = [...h.cards, ...m.cards, ...s.cards, ...day.cards, ...month.cards, ...year.cards];
++    const cards = [...h.cards, ...m.cards, ...s.cards];
 +    let lastText = '';
 +
 +    function setColor(rgb) {
@@ -262,8 +249,7 @@ index 0000000..d327e5b
 +        update() {
 +            const now = new Date();
 +            const pad = (n) => (n < 10 ? '0' : '') + n;
-+            const text = pad(now.getHours()) + pad(now.getMinutes()) + pad(now.getSeconds()) +
-+                pad(now.getDate()) + MONTHS[lang][now.getMonth()] + pad(now.getFullYear() % 100);
++            const text = pad(now.getHours()) + pad(now.getMinutes()) + pad(now.getSeconds());
 +            if (text === lastText) return;
 +            for (let i = 0; i < cards.length; i++) {
 +                if (text[i] !== lastText[i]) cards[i].textContent = text[i];
@@ -768,10 +754,10 @@ index 0000000..5513018
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..9858b94
+index 0000000..1ed1701
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,864 @@
+@@ -0,0 +1,856 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -1197,7 +1183,7 @@ index 0000000..9858b94
 +    position: absolute;
 +    left: 0;
 +    right: 0;
-+    bottom: 2.8vh;
++    bottom: 4vh;
 +    display: flex;
 +    align-items: center;
 +    justify-content: center;
@@ -1401,7 +1387,7 @@ index 0000000..9858b94
 +    display: flex;
 +    flex-direction: column;
 +    justify-content: center;
-+    height: 20vh;
++    height: 15vh;
 +    padding: 1vh 1.6vh;
 +}
 +
@@ -1409,14 +1395,6 @@ index 0000000..9858b94
 +    display: flex;
 +    justify-content: center;
 +    align-items: flex-end;
-+}
-+
-+.tt-flap-row + .tt-flap-row {
-+    margin-top: 1vh;
-+}
-+
-+.tt-flap-group + .tt-flap-group {
-+    margin-left: 1.8vh;
 +}
 +
 +.tt-flap-label {
@@ -1434,9 +1412,9 @@ index 0000000..9858b94
 +
 +.tt-flap-card {
 +    position: relative;
-+    width: 6vh;
-+    height: 6.9vh;
-+    border-radius: 0.7vh;
++    width: 7.4vh;
++    height: 9.2vh;
++    border-radius: 0.8vh;
 +    /* Two halves, the lower one a touch darker, as on a real flap board. */
 +    background: linear-gradient(180deg, #3e4043 0%, #2d2f31 49.4%, #1b1c1e 50.6%, #2a2b2d 100%);
 +    box-shadow: inset 0 0 0 0.1vh rgba(255, 255, 255, 0.07), 0 0.4vh 0.8vh rgba(0, 0, 0, 0.5);
@@ -1451,9 +1429,9 @@ index 0000000..9858b94
 +    display: block;
 +    height: 100%;
 +    font-family: 'Roboto Condensed', 'YouTube Sans', Roboto, Arial, sans-serif;
-+    font-size: 5.4vh;
++    font-size: 7.4vh;
 +    font-weight: 700;
-+    line-height: 6.9vh;
++    line-height: 9.2vh;
 +    text-align: center;
 +    color: #f0f0f0;
 +}
@@ -1492,25 +1470,25 @@ index 0000000..9858b94
 +    display: flex;
 +    flex-direction: column;
 +    justify-content: center;
-+    height: 6.9vh;
-+    margin: 0 1vh;
++    height: 9.2vh;
++    margin: 0 1.2vh;
 +}
 +
 +.tt-flap-colon i {
 +    display: block;
-+    width: 0.9vh;
-+    height: 0.9vh;
++    width: 1.1vh;
++    height: 1.1vh;
 +    background: currentColor;
 +}
 +
 +.tt-flap-colon i + i {
-+    margin-top: 1.8vh;
++    margin-top: 2.4vh;
 +}
 +
 +/* Ambient mode: the same board, smaller. */
 +.tt-audio-ambient .tt-audio-led.tt-flap {
 +    width: 62vh;
-+    height: 20vh;
++    height: 15vh;
 +    transform: scale(0.72);
 +    transform-origin: left center;
 +    margin-right: -17.4vh;
