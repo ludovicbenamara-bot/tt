@@ -287,12 +287,111 @@ index 0000000..fb236f6
 +    update();
 +    return { element: card, update, setWeather };
 +}
+diff --git a/mods/features/audioMap.js b/mods/features/audioMap.js
+new file mode 100644
+index 0000000..5513018
+--- /dev/null
++++ b/mods/features/audioMap.js
+@@ -0,0 +1,93 @@
++// Swiss weather map for the audio-only screen, in the style of the
++// MeteoSwiss forecast map: country shape with the main lakes, and for each
++// city a weather icon with a name / min / max label.
++// The outline comes from swisstopo (swissBOUNDARIES3D, VEC25 lakes),
++// simplified and projected from Swiss LV95 coordinates to a 1000-wide box.
++
++import { weatherIcon, kindFor } from './audioWeather.js';
++
++const MAP = {
++    width: 1000,
++    height: 646,
++    // LV95 extent of the drawing.
++    x0: 2478000,
++    x1: 2842000,
++    y0: 1068000,
++    y1: 1303000,
++};
++const BORDER = 'M47 439L50 436L47 429L52 424L56 416L61 409L62 410L65 405L55 395L70 383L92 361L111 351L110 349L114 349L116 344L124 341L128 336L130 331L125 328L124 324L126 323L127 318L130 312L131 300L125 289L138 275L140 278L158 270L164 270L168 266L172 259L180 256L185 252L179 247L182 245L182 242L186 239L190 240L190 234L203 228L213 220L214 217L211 215L218 211L219 206L235 194L232 180L243 178L247 172L246 169L254 168L256 166L257 163L254 162L254 158L247 154L239 158L228 159L224 158L219 160L220 154L226 149L226 144L231 144L232 135L237 135L238 131L245 129L241 117L249 114L260 119L271 114L278 118L286 117L281 125L280 133L285 135L293 134L295 140L303 135L313 133L318 136L328 135L333 128L339 124L333 121L331 121L334 116L342 121L348 118L350 114L347 109L348 111L352 111L354 107L352 105L348 107L348 103L360 95L362 92L365 92L366 88L370 89L370 92L372 92L378 86L384 87L388 84L383 89L387 93L386 95L386 94L385 96L376 97L383 104L388 105L409 98L415 88L419 90L429 88L433 93L433 100L440 102L443 97L456 100L465 95L470 97L474 90L479 89L482 85L485 86L494 78L496 79L498 82L504 79L506 81L512 81L513 87L519 93L530 94L533 91L540 94L547 92L553 89L552 87L548 88L545 83L548 82L550 79L556 78L558 73L566 76L570 79L567 83L572 84L576 79L574 70L577 67L578 69L576 71L578 71L581 68L576 61L570 64L567 62L562 63L563 66L561 64L560 65L561 69L553 69L553 70L549 68L549 72L547 66L543 67L535 61L538 58L534 54L537 50L545 46L544 41L550 31L556 29L558 31L559 29L565 27L567 29L570 28L569 25L566 24L568 19L569 22L574 21L578 22L578 32L581 35L585 30L584 25L586 22L586 24L591 26L593 34L594 35L598 32L601 33L604 37L600 38L597 43L603 47L601 54L607 55L614 59L615 59L616 54L618 54L615 51L610 50L610 46L613 44L616 44L615 41L617 40L618 42L617 44L621 46L620 48L625 48L626 51L631 50L631 53L627 52L628 54L626 57L630 59L632 65L636 67L645 65L662 55L677 57L686 61L688 60L694 64L710 63L739 74L760 94L774 97L775 111L782 120L783 121L785 118L788 122L795 123L792 129L794 138L798 142L799 144L796 149L789 150L785 154L782 165L775 171L770 180L761 207L767 222L769 233L768 236L760 243L760 247L762 245L762 248L764 245L774 242L778 247L787 243L793 246L796 243L803 243L805 245L809 245L811 248L816 248L817 250L825 249L836 257L841 253L844 254L843 257L847 260L848 263L844 272L845 273L845 280L858 286L866 285L869 289L875 289L882 297L882 301L890 301L894 307L898 305L907 304L912 299L920 299L921 293L919 290L922 283L921 279L933 282L937 280L935 275L935 272L939 271L943 260L948 260L951 257L960 264L960 269L966 270L973 275L973 282L969 291L971 302L968 308L968 312L966 317L962 318L961 321L965 325L966 331L957 338L961 342L961 345L954 353L958 367L968 366L978 373L974 396L972 396L970 399L963 393L958 396L949 393L946 397L943 394L940 396L937 395L935 389L931 386L928 389L926 387L925 382L929 377L924 369L919 375L915 372L901 379L896 378L896 386L891 389L892 392L888 398L884 400L886 405L884 409L886 412L884 418L887 423L885 429L888 430L889 434L892 434L893 436L897 435L903 432L906 433L907 437L910 437L911 439L911 445L903 449L904 454L900 457L899 460L902 468L910 474L915 485L906 495L898 494L893 498L887 494L891 489L889 483L877 478L876 474L877 473L877 469L873 466L876 458L869 454L868 449L863 451L861 454L857 449L849 455L841 456L830 464L821 459L818 463L819 465L817 468L819 471L816 478L811 477L809 474L800 480L795 477L788 477L784 474L782 475L775 468L770 457L763 453L764 449L761 440L763 425L762 421L759 420L762 420L762 413L756 416L751 426L744 421L742 418L743 415L741 413L724 417L722 421L723 428L717 433L717 437L724 443L723 449L725 452L724 457L725 460L728 460L729 464L727 466L729 469L725 475L726 478L719 488L719 498L713 499L713 504L709 506L708 515L705 518L701 518L700 520L695 523L692 529L682 534L686 543L683 551L672 554L669 559L674 572L669 576L667 576L665 580L671 582L672 592L681 594L682 597L684 597L684 601L687 600L682 608L680 609L679 615L676 619L676 624L672 626L667 625L668 621L666 620L662 622L659 619L650 623L650 619L657 611L654 610L650 596L645 592L645 583L640 583L632 575L622 575L626 565L631 561L632 558L631 557L632 555L634 556L636 552L636 548L626 540L624 542L621 543L616 540L612 534L606 542L594 537L592 534L584 535L584 531L580 528L582 524L576 522L574 516L569 512L567 505L554 501L552 498L548 496L551 492L545 481L552 470L551 464L553 462L551 454L553 451L550 443L552 437L548 431L537 435L531 435L522 443L519 443L515 448L520 451L520 458L514 462L510 462L509 467L501 471L499 478L496 481L488 483L483 481L472 492L472 495L477 497L479 501L484 504L487 515L489 517L486 523L487 528L485 531L479 533L477 539L462 542L459 552L462 560L457 564L457 570L455 570L452 575L435 574L432 580L429 582L428 598L426 599L417 596L412 599L406 593L401 592L398 597L395 597L392 594L393 590L387 587L383 581L367 583L365 578L359 578L357 581L357 587L348 585L342 590L343 593L336 595L333 600L329 602L327 601L324 605L319 603L315 600L311 601L304 598L296 608L295 606L288 608L282 617L274 611L267 617L263 617L262 612L251 597L250 587L244 583L247 580L244 574L239 572L238 568L234 564L231 558L228 556L229 554L226 553L219 560L215 558L216 552L219 551L217 544L221 536L210 535L208 533L203 534L199 532L198 523L202 518L200 511L204 505L204 502L212 495L214 488L212 484L210 485L206 482L204 477L200 475L199 471L197 472L194 465L195 462L199 461L201 458L201 454L205 443L175 434L141 433L121 445L102 449L84 462L77 476L83 480L84 483L81 487L85 495L89 495L93 491L93 494L96 494L96 498L93 503L83 509L77 510L70 517L69 521L59 528L51 527L49 525L41 525L37 530L36 528L29 527L21 532L26 518L27 519L29 515L22 511L24 509L25 506L29 505L28 503L31 504L37 498L40 500L44 496L46 498L49 496L52 499L56 496L56 491L52 484L56 481L56 476L60 468L67 460L65 456L63 456L52 446L45 444Z';
++const LAKES = 'M679 564L679 567L676 567L662 577L660 588L665 596L664 599L662 599L661 593L657 590L648 600L646 600L647 596L644 591L644 585L641 585L638 582L638 580L641 581L640 583L643 583L643 580L645 578L645 575L648 573L646 580L647 586L646 591L650 594L655 586L659 585L656 583L658 576L656 573L657 570L661 569L664 571L676 563L686 563L692 559L694 562L692 564ZM90 465L85 473L84 477L82 479L80 484L75 491L72 491L71 499L67 507L63 509L62 508L63 507L62 502L63 495L66 491L67 481L73 474L77 462L84 453L91 451L93 443L99 437L105 431L111 430L116 432L129 426L130 424L133 422L135 419L140 415L145 418L149 418L156 414L164 419L175 419L184 424L189 424L196 428L207 430L213 437L216 436L218 439L222 439L223 442L226 443L228 448L225 453L220 453L218 451L218 453L212 453L212 456L206 455L184 448L166 449L146 452L140 449L134 452L132 458L122 462L118 462L113 468L108 466L104 459L100 459L95 460ZM564 155L566 159L569 161L572 171L583 183L593 187L605 195L616 194L618 192L622 193L621 197L625 199L629 199L629 198L631 198L636 199L643 196L649 197L648 198L649 199L638 203L637 202L632 203L632 204L629 203L629 206L627 207L622 206L617 202L606 203L607 202L605 202L604 204L601 204L587 190L582 189L575 186L563 162L563 156ZM292 227L293 229L290 232L286 242L278 253L268 257L264 253L260 254L259 250L266 248L268 245L281 237ZM478 214L491 225L492 228L490 231L485 228L478 222ZM551 211L552 213L556 213L559 215L558 225L555 229L561 239L562 245L561 248L549 237L554 232L549 230L551 224L548 224L549 219L546 214ZM543 242L544 243L541 251L535 259L543 257L550 260L553 263L554 266L551 268L556 270L560 268L567 270L575 266L580 269L582 281L580 288L583 292L583 295L579 300L577 298L578 291L574 287L577 276L577 272L576 270L567 275L556 278L540 273L540 271L548 268L548 267L529 266L526 272L522 273L522 277L515 282L513 281L511 281L514 278L522 275L521 273L518 273L519 270L516 265L519 264L521 267L524 265L523 257L517 251L522 251L526 257L528 257L537 248L540 246ZM615 219L617 220L616 225L618 228L619 235L623 238L621 240L615 234L616 231L610 223L611 220ZM267 281L269 281L271 285L268 289L264 292L262 292L262 294L257 297L252 296L251 291L257 286ZM100 369L102 369L100 373L83 385L87 380ZM588 152L593 155L595 162L599 164L596 168L587 156ZM442 351L452 343L456 342L463 344L463 347L458 348L436 363L429 362ZM494 170L496 172L500 186L499 192L495 183ZM631 516L635 521L637 519L635 521L638 521L636 522L637 523L637 522L636 523L637 523L636 524L637 525L638 524L638 525L626 530L616 539L611 540L608 547L610 551L610 559L613 561L614 564L604 564L606 560L603 551L602 550L601 543L607 530L610 526L616 524L623 527L625 524L624 519ZM377 346L388 355L395 357L401 365L411 364L418 370L415 372L412 371L403 374L391 368L391 365L387 364L388 362L383 361L377 355L378 354L375 354L375 347ZM183 315L191 309L195 302L203 293L209 290L211 286L216 285L217 277L219 275L234 269L239 264L245 267L248 266L247 269L249 266L252 268L254 272L250 273L251 276L249 279L233 290L228 297L222 300L222 298L222 301L213 311L204 317L193 327L184 327L171 333L167 331L167 327L175 322ZM738 59L744 60L753 65L760 64L764 69L767 78L772 83L772 82L773 83L773 82L773 83L776 84L781 82L784 87L788 87L788 89L790 89L793 92L805 93L809 98L814 102L814 106L812 107L803 106L803 109L800 107L801 108L799 113L800 108L798 109L798 112L797 107L792 102L796 108L797 110L794 111L797 111L795 112L797 113L791 111L790 109L792 107L791 107L785 113L780 113L776 109L775 111L773 109L770 115L762 116L758 116L755 111L748 108L749 104L738 96L737 94L737 89L725 82L713 73L695 65L694 60L700 61L702 60L701 55L694 49L693 40L688 36L701 36L704 39L704 43L710 50L729 61L731 62ZM685 222L705 225L721 224L724 225L723 228L721 229L703 230L683 225L681 224ZM266 354L264 358L267 364L269 363L267 365L266 365L266 366L264 368L265 371L263 373L265 386L263 386L262 382L262 372L263 370L262 369L259 372L261 367L265 362L262 361L263 359L261 358Z';
++
++function el(tag, className, text) {
++    const node = document.createElement(tag);
++    if (className) node.className = className;
++    if (text) node.textContent = text;
++    return node;
++}
++
++export function createSwissMap() {
++    const card = el('div', 'tt-audio-map');
++    card.style.display = 'none';
++
++    // Drawn on a canvas: Cobalt's SVG renderer leaves artefacts on large paths.
++    const canvas = document.createElement('canvas');
++    canvas.className = 'tt-audio-map-shape';
++    card.appendChild(canvas);
++    let drawnWidth = 0;
++
++    function drawShape() {
++        const ratio = window.devicePixelRatio || 1;
++        const w = Math.round(canvas.clientWidth * ratio);
++        const h = Math.round(canvas.clientHeight * ratio);
++        if (!w || !h || w === drawnWidth) return;
++        drawnWidth = w;
++        canvas.width = w;
++        canvas.height = h;
++        const ctx = canvas.getContext('2d');
++        ctx.setTransform(w / MAP.width, 0, 0, h / MAP.height, 0, 0);
++        const land = new Path2D(BORDER);
++        ctx.fillStyle = '#79b49c';
++        ctx.fill(land);
++        ctx.lineWidth = 1.5;
++        ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
++        ctx.stroke(land);
++        ctx.fillStyle = '#8ec3f5';
++        ctx.fill(new Path2D(LAKES));
++    }
++
++    const labels = el('div', 'tt-audio-map-labels');
++    card.appendChild(labels);
++
++    // cities: [{name, x, y (LV95), code (WMO), min, max}]
++    function setCities(cities) {
++        while (labels.firstChild) labels.removeChild(labels.firstChild);
++        if (!cities || !cities.length) {
++            card.style.display = 'none';
++            return;
++        }
++        for (const c of cities) {
++            if (typeof c.x !== 'number' || typeof c.y !== 'number') continue;
++            const marker = el('div', 'tt-audio-map-city');
++            // Near the right edge, put the label above the icon (Austria side, free).
++            if ((c.x - MAP.x0) / (MAP.x1 - MAP.x0) > 0.88) marker.classList.add('tt-audio-map-city-above');
++            marker.style.left = ((c.x - MAP.x0) / (MAP.x1 - MAP.x0) * 100).toFixed(2) + '%';
++            marker.style.top = ((MAP.y1 - c.y) / (MAP.y1 - MAP.y0) * 100).toFixed(2) + '%';
++            const icon = weatherIcon(kindFor(c.code));
++            icon.setAttribute('class', 'tt-audio-map-icon');
++            marker.appendChild(icon);
++            const pill = el('div', 'tt-audio-map-pill');
++            pill.appendChild(el('div', 'tt-audio-map-name', String(c.name || '')));
++            const temps = el('div', 'tt-audio-map-temps');
++            temps.appendChild(el('span', '', c.min + '°'));
++            temps.appendChild(el('span', '', c.max + '°'));
++            pill.appendChild(temps);
++            marker.appendChild(pill);
++            labels.appendChild(marker);
++        }
++        card.style.display = '';
++        // Needs the card laid out to know its size.
++        setTimeout(drawShape, 0);
++    }
++
++    return { element: card, setCities };
++}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..e8efd23
+index 0000000..9eea8c2
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,502 @@
+@@ -0,0 +1,619 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -433,17 +532,22 @@ index 0000000..e8efd23
 +/* Large artwork; shrinks a little when paused, like Apple Music. */
 +.tt-audio-art-wrap {
 +    flex: 0 0 auto;
-+    margin-right: 6vw;
++    display: flex;
++    flex-direction: column;
++    align-items: center;
++    margin-right: 5vw;
 +}
 +
 +.tt-audio-art {
-+    width: 52vh;
-+    height: 52vh;
-+    border-radius: 2.2vh;
++    flex: 0 0 auto;
++    width: 15vh;
++    height: 15vh;
++    margin-right: 2.6vh;
++    border-radius: 1.4vh;
 +    background-color: rgba(255, 255, 255, 0.08);
 +    background-size: cover;
 +    background-position: center;
-+    box-shadow: 0 4vh 10vh rgba(0, 0, 0, 0.55), 0 1vh 3vh rgba(0, 0, 0, 0.35);
++    box-shadow: 0 1.5vh 4vh rgba(0, 0, 0, 0.5);
 +    transform: scale(1);
 +    transition: transform 0.6s cubic-bezier(0.34, 1.4, 0.64, 1), box-shadow 0.6s ease;
 +}
@@ -456,6 +560,110 @@ index 0000000..e8efd23
 +.tt-audio-paused .tt-audio-art {
 +    transform: scale(0.86);
 +    box-shadow: 0 2vh 5vh rgba(0, 0, 0, 0.4);
++}
++
++.tt-audio-title-row {
++    display: flex;
++    align-items: center;
++}
++
++.tt-audio-title-text {
++    flex: 1 1 auto;
++    min-width: 0;
++}
++
++/* Swiss weather map (MeteoSwiss data), where the large artwork used to be. */
++.tt-audio-map {
++    position: relative;
++    width: 66vh;
++    height: calc(66vh * 646 / 1000);
++    border-radius: 2.2vh;
++    background: rgba(34, 40, 48, 0.72);
++    box-shadow: 0 2vh 5vh rgba(0, 0, 0, 0.35);
++    overflow: hidden;
++}
++
++.tt-audio-map-shape {
++    position: absolute;
++    top: 0;
++    left: 0;
++    width: 100%;
++    height: 100%;
++}
++
++.tt-audio-map-labels {
++    position: absolute;
++    top: 0;
++    left: 0;
++    width: 100%;
++    height: 100%;
++}
++
++/* Anchored on the city: icon on the point, label to its right. */
++.tt-audio-map-city {
++    position: absolute;
++    display: flex;
++    align-items: center;
++    transform: translate(-1.9vh, -50%);
++    white-space: nowrap;
++}
++
++.tt-audio-map-city-above {
++    flex-direction: column-reverse;
++    transform: translate(-50%, calc(-100% + 1.9vh));
++}
++
++.tt-audio-map-city-above .tt-audio-map-icon {
++    margin: -0.5vh 0 0;
++}
++
++.tt-audio-map-icon {
++    margin-right: 0;
++    margin-left: -0.6vh;
++}
++
++.tt-audio-map-city-left .tt-audio-map-pill {
++    padding: 0.35vh 1.1vh 0.4vh 0.9vh;
++}
++
++.tt-audio-map-icon {
++    width: 3.8vh;
++    height: 3.8vh;
++    margin-right: -0.6vh;
++    position: relative;
++    z-index: 1;
++    filter: drop-shadow(0 0.3vh 0.5vh rgba(0, 0, 0, 0.35));
++}
++
++.tt-audio-map-pill {
++    padding: 0.35vh 0.9vh 0.4vh 1.1vh;
++    border-radius: 1.2vh;
++    background: #2f6be0;
++    box-shadow: 0 0.4vh 1vh rgba(0, 0, 0, 0.3);
++    line-height: 1.1;
++}
++
++.tt-audio-map-name {
++    font-size: 1.35vh;
++    font-weight: 600;
++}
++
++.tt-audio-map-temps {
++    display: flex;
++    margin-top: 0.25vh;
++    font-size: 1.35vh;
++    font-weight: 700;
++    font-variant-numeric: tabular-nums;
++}
++
++.tt-audio-map-temps span {
++    padding: 0 0.45vh;
++    border-radius: 0.4vh;
++    background: rgba(10, 30, 90, 0.45);
++}
++
++.tt-audio-map-temps span + span {
++    margin-left: 0.3vh;
 +}
 +
 +.tt-audio-info {
@@ -737,8 +945,12 @@ index 0000000..e8efd23
 +}
 +
 +.tt-audio-ambient .tt-audio-art {
-+    width: 30vh;
-+    height: 30vh;
++    width: 14vh;
++    height: 14vh;
++}
++
++.tt-audio-ambient .tt-audio-map {
++    display: none;
 +}
 +
 +.tt-audio-ambient .tt-audio-clock {
@@ -775,9 +987,13 @@ index 0000000..e8efd23
 +    }
 +
 +    .tt-audio-art {
-+        width: 80vw;
-+        height: 80vw;
-+        border-radius: 3vw;
++        width: 18vw;
++        height: 18vw;
++    }
++
++    .tt-audio-map {
++        width: 88vw;
++        height: calc(88vw * 646 / 1000);
 +    }
 +
 +    .tt-audio-info {
@@ -797,10 +1013,10 @@ index 0000000..e8efd23
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..b78f87c
+index 0000000..cf3391f
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,566 @@
+@@ -0,0 +1,575 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode.
@@ -810,6 +1026,7 @@ index 0000000..b78f87c
 +import { createWeather, weatherIcon, kindFor } from './audioWeather.js';
 +import { createClock } from './audioClock.js';
 +import { createSpectrum } from './audioSpectrum.js';
++import { createSwissMap } from './audioMap.js';
 +import { createBurnInGuard } from './audioBurnIn.js';
 +
 +const SEEK_STEP = 10;
@@ -925,13 +1142,15 @@ index 0000000..b78f87c
 +
 +    const artWrap = el('div', 'tt-audio-art-wrap');
 +
-+    // Widget-style clock above the artwork.
++    // Widget-style clock above the Swiss weather map.
 +    els.clock = createClock();
 +    artWrap.appendChild(els.clock.element);
-+
-+    els.art = el('div', 'tt-audio-art');
-+    artWrap.appendChild(els.art);
++    els.map = createSwissMap();
++    artWrap.appendChild(els.map.element);
 +    content.appendChild(artWrap);
++
++    // Small artwork, next to the title.
++    els.art = el('div', 'tt-audio-art');
 +
 +    const info = el('div', 'tt-audio-info');
 +    els.weather = createWeather(t('player.audioOnly.today'), (data) => {
@@ -939,13 +1158,19 @@ index 0000000..b78f87c
 +        const today = data.days[0];
 +        const kind = kindFor(today.code);
 +        els.clock.setWeather(weatherIcon(kind), t('player.audioOnly.conditions.' + kind), today.max);
++        els.map.setCities(data.cities);
 +    });
 +    info.appendChild(els.weather.element);
 +
 +    els.title = el('div', 'tt-audio-title');
 +    els.author = el('div', 'tt-audio-author');
-+    info.appendChild(els.title);
-+    info.appendChild(els.author);
++    const titleRow = el('div', 'tt-audio-title-row');
++    const titleText = el('div', 'tt-audio-title-text');
++    titleText.appendChild(els.title);
++    titleText.appendChild(els.author);
++    titleRow.appendChild(els.art);
++    titleRow.appendChild(titleText);
++    info.appendChild(titleRow);
 +
 +    // Sound animation: Winamp-style LED spectrum analyser.
 +    els.spectrum = createSpectrum();
@@ -1369,10 +1594,10 @@ index 0000000..b78f87c
 +export { enableAudioOnly, disableAudioOnly, toggleAudioOnly };
 diff --git a/mods/features/audioSpectrum.js b/mods/features/audioSpectrum.js
 new file mode 100644
-index 0000000..124d09c
+index 0000000..40994a5
 --- /dev/null
 +++ b/mods/features/audioSpectrum.js
-@@ -0,0 +1,258 @@
+@@ -0,0 +1,260 @@
 +// Winamp-style LED spectrum analyser for the audio-only screen: columns of
 +// LED segments on a dark dot matrix, white peak caps that hold then fall, and
 +// a blue dotted baseline. The segments take the artwork's dominant colour
@@ -1481,6 +1706,8 @@ index 0000000..124d09c
 +
 +    let timer = null;
 +    let paused = false;
++    let beatAt = 0;
++    let beatInterval = 500;
 +    let liveLevels = null;
 +    let liveAt = 0;
 +    let pollTimer = null;
@@ -1633,10 +1860,10 @@ index 0000000..124d09c
 +}
 diff --git a/mods/features/audioWeather.js b/mods/features/audioWeather.js
 new file mode 100644
-index 0000000..5d57eef
+index 0000000..538ba3f
 --- /dev/null
 +++ b/mods/features/audioWeather.js
-@@ -0,0 +1,299 @@
+@@ -0,0 +1,302 @@
 +// 5-day weather row for the audio-only screen.
 +// YouTube TV's CSP only lets the page reach Google/YouTube hosts, so the
 +// forecast is relayed through a public Google Sheet: its A1 cell runs
@@ -1650,7 +1877,8 @@ index 0000000..5d57eef
 +// Google throttling); the sheet is only a fallback for the original APK.
 +const NATIVE_URL = 'http://127.0.0.1:47913/weather';
 +const CITY_COLUMN = 6;
-+const CACHE_KEY = 'tt-audio-weather';
++// Bumped when the cached data format changes (v2: MeteoSwiss map cities).
++const CACHE_KEY = 'tt-audio-weather-v2';
 +const CACHE_TTL_MS = 60 * 60 * 1000;
 +// If the sheet cannot reach Open-Meteo (it happens: Google's shared servers
 +// get throttled), keep showing the last forecast for up to this long.
@@ -1847,7 +2075,9 @@ index 0000000..5d57eef
 +        d && typeof d.date === 'string' && typeof d.code === 'number' &&
 +        typeof d.max === 'number' && typeof d.min === 'number');
 +    if (!days.length) throw new Error('no native forecast');
-+    const data = { savedAt: Date.now(), city: '', days: days.slice(0, DAYS) };
++    // Cities for the Swiss map (MeteoSwiss), when the native side has them.
++    const cities = Array.isArray(json.cities) ? json.cities : [];
++    const data = { savedAt: Date.now(), city: '', days: days.slice(0, DAYS), cities };
 +    writeCache(data);
 +    return data;
 +}

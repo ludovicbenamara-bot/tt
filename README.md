@@ -7,8 +7,9 @@ Version modifiée du script de [TizenTube](https://github.com/reisxd/TizenTube) 
 - **Bouton « Audio seulement »** dans la barre du lecteur et dans le menu ⚙ des paramètres de lecture.
 - **Écran « À l'écoute »** : grande pochette, fond flou animé aux couleurs de la pochette, titre / artiste, progression avec temps restant.
 - **Spectre LED façon Winamp** qui suit **la vraie musique** (capture Android, voir plus bas) et prend la couleur de la pochette.
-- **Horloge widget** (cadran + chiffres, date, météo du jour) translucide, au-dessus de la pochette.
-- **Météo sur 5 jours** (icônes en couleur, températures max / min).
+- **Horloge widget** (cadran + chiffres, date, météo du jour) translucide.
+- **Carte météo de la Suisse** (données MétéoSuisse, contour et lacs swisstopo) avec 16 villes ; la pochette, réduite, est à côté du titre.
+- **Météo sur 5 jours** (MétéoSuisse pour la localité la plus proche ; icônes en couleur, températures max / min).
 - **Télécommande** : OK = lecture / pause, ◀ ▶ = ±10 s, CH+ / CH− = morceau suivant / précédent, Retour = revenir à la vidéo.
 - **Protection anti-marquage** de l'écran :
   1. décalage imperceptible de l'affichage toutes les 60 s ;
@@ -23,7 +24,7 @@ Version modifiée du script de [TizenTube](https://github.com/reisxd/TizenTube) 
 |---|---|
 | `u.js` | Script compilé chargé par l'application (via jsDelivr). |
 | `audio-only.patch` | Code source des modifications du script, à appliquer sur TizenTube. |
-| `native-src.zip` | Code source Java ajouté à l'APK (capture du son réel), avec `BUILD.md`. |
+| `native-src.zip` | Code source Java ajouté à l'APK (capture du son réel, météo MétéoSuisse), avec `BUILD.md`. |
 | `LICENSE` | Licence GPL-3.0 (identique au projet d'origine). |
 
 ## Reconstruire depuis les sources
@@ -42,7 +43,7 @@ npm run build   # produit ../dist/userScript.js
 
 ## Notes techniques
 
-- YouTube TV n'autorise les connexions réseau qu'à une liste de sites Google / YouTube. La météo passe donc par une feuille Google Sheets publique qui interroge [Open-Meteo](https://open-meteo.com/) et que le script lit via `docs.google.com`.
+- YouTube TV n'autorise les connexions réseau qu'à une liste de sites Google / YouTube. La météo est donc récupérée par le module Java (MétéoSuisse, sinon [Open-Meteo](https://open-meteo.com/)) et servie au script sur `127.0.0.1` ; avec l'APK d'origine, une feuille Google Sheets publique sert de secours. Données météo : © MétéoSuisse ; fond de carte : © swisstopo.
 - L'application pointe vers une version figée de `u.js` (`cdn.jsdelivr.net/gh/ludovicbenamara-bot/tt@<commit>/u.js`) : le cache de jsDelivr sur une branche peut durer plusieurs heures.
 
 ## Spectre audio réel
