@@ -754,10 +754,10 @@ index 0000000..5513018
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..ebb3a3d
+index 0000000..5ce52f3
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,1022 @@
+@@ -0,0 +1,1024 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -1167,7 +1167,9 @@ index 0000000..ebb3a3d
 +    display: flex;
 +    align-items: center;
 +    justify-content: center;
-+    margin-top: 2.5vh;
++    /* Same visible gap above (under the times' letters) and below (to the Hue
++       tile): the times' line box already leaves ~0.5vh under the digits. */
++    margin-top: 2.2vh;
 +}
 +
 +.tt-audio-btn {
@@ -1271,7 +1273,7 @@ index 0000000..ebb3a3d
 +    box-sizing: border-box;
 +    width: 100%;
 +    height: 4.5vh;
-+    margin-top: 2vh;
++    margin-top: 2.7vh;
 +    padding: 0 1.4vh 0 0.6vh;
 +    border: none;
 +    border-radius: 1.2vh;
