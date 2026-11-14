@@ -1599,10 +1599,10 @@ index 0000000..291e0f0
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..12c275a
+index 0000000..6816e0e
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,644 @@
+@@ -0,0 +1,637 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode, Down = Hue tile.
@@ -2094,7 +2094,8 @@ index 0000000..12c275a
 +    if (RED_KEYS.indexOf(evt.keyCode) !== -1 && (window.isAudioOnly || isWatching())) {
 +        if (evt.type === 'keydown') {
 +            if (window.isAudioOnly) disableAudioOnly('red key');
-+            else enableAudioOnly();
++            // No menu to close here: a "Back" key would make YouTube leave the video.
++            else enableAudioOnly({ closeMenus: false });
 +        }
 +        evt.preventDefault();
 +        evt.stopPropagation();
@@ -2172,7 +2173,10 @@ index 0000000..12c275a
 +    return true;
 +}
 +
-+function enableAudioOnly() {
++// options.closeMenus (default true): close YouTube's settings popup first,
++// for when audio mode is chosen from the player's menu or bar.
++function enableAudioOnly(options) {
++    const closeMenus = !options || options.closeMenus !== false;
 +    if (window.isAudioOnly) return;
 +    if (!getVideo()) {
 +        log('no <video> element, not enabling');
@@ -2182,11 +2186,13 @@ index 0000000..12c275a
 +
 +    // Close the player's settings popup / controls if open. Must happen before
 +    // isAudioOnly is set, otherwise keyHandler treats it as "leave audio mode".
-+    const kE = document.createEvent('Event');
-+    kE.initEvent('keydown', true, true);
-+    kE.keyCode = 27;
-+    kE.which = 27;
-+    document.dispatchEvent(kE);
++    if (closeMenus) {
++        const kE = document.createEvent('Event');
++        kE.initEvent('keydown', true, true);
++        kE.keyCode = 27;
++        kE.which = 27;
++        document.dispatchEvent(kE);
++    }
 +
 +    window.isAudioOnly = true;
 +    lastVideoId = null;
@@ -2199,19 +2205,6 @@ index 0000000..12c275a
 +    els.burnIn.reset();
 +    els.spectrum.start();
 +    tickInterval = setInterval(tick, 500);
-+    // TEMPORARY diagnostics: state of every <video> 3 s after opening.
-+    setTimeout(() => {
-+        const vids = Array.prototype.slice.call(document.getElementsByTagName('video'));
-+        const chosen = getVideo();
-+        const info = vids.map((v, i) => {
-+            const r = v.getBoundingClientRect();
-+            const p = v.closest ? v.closest('.html5-video-player') : null;
-+            let id = '';
-+            try { id = p && p.getVideoData ? p.getVideoData().video_id : ''; } catch (e) { }
-+            return `${i}${v === chosen ? '*' : ''}:p=${v.paused ? 1 : 0},t=${v.currentTime.toFixed(1)},d=${v.duration},rs=${v.readyState},a=${Math.round(r.width)}x${Math.round(r.height)},id=${id}`;
-+        }).join(' | ');
-+        fetch('http://127.0.0.1:47913/status?info=' + encodeURIComponent(location.hash.slice(0, 30) + ' ' + info), { cache: 'no-store' }).catch(() => { });
-+    }, 3000);
 +}
 +
 +function disableAudioOnly(reason) {
