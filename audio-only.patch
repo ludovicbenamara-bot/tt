@@ -160,6 +160,45 @@ index 0000000..2dfe900
 +        },
 +    };
 +}
+diff --git a/mods/features/audioDiag.js b/mods/features/audioDiag.js
+new file mode 100644
+index 0000000..94cb3cc
+--- /dev/null
++++ b/mods/features/audioDiag.js
+@@ -0,0 +1,33 @@
++// TEMPORARY diagnostics: what picture and sound the player really gets.
++import { mainPlayer, mainVideo } from './audioMainVideo.js';
++
++let lastId = null;
++function send(info) {
++    fetch('http://127.0.0.1:47913/status?info=' + encodeURIComponent(info), { cache: 'no-store' }).catch(() => { });
++}
++setInterval(() => {
++    const player = mainPlayer();
++    const video = mainVideo();
++    let id = null;
++    try { id = player && player.getVideoData ? player.getVideoData().video_id : null; } catch (e) { }
++    if (!id || id === lastId || !video || video.paused) return;
++    lastId = id;
++    setTimeout(() => {
++        const out = [];
++        try { out.push('levels=' + player.getAvailableQualityLevels().join('/')); } catch (e) { out.push('levels?'); }
++        try { out.push('q=' + player.getPlaybackQuality()); } catch (e) { }
++        try { out.push('vid=' + video.videoWidth + 'x' + video.videoHeight); } catch (e) { }
++        try {
++            const s = player.getStatsForNerds ? player.getStatsForNerds() : null;
++            if (s) out.push('codecs=' + s.codecs + ' res=' + s.resolution + ' color=' + (s.color || s.hdr || ''));
++        } catch (e) { out.push('nerds?'); }
++        out.push('screen=' + screen.width + 'x' + screen.height + '@' + (window.devicePixelRatio || 1));
++        const t = (type) => { try { return MediaSource.isTypeSupported(type) ? 1 : 0; } catch (e) { return 'x'; } };
++        out.push('vp9_4k=' + t('video/webm; codecs="vp9"; width=3840; height=2160'));
++        out.push('vp9hdr=' + t('video/webm; codecs="vp09.02.51.10.01.09.16.09.00"; width=3840; height=2160; eotf=smpte2084'));
++        out.push('av1_4k=' + t('video/mp4; codecs="av01.0.12M.08"; width=3840; height=2160'));
++        out.push('av1hdr=' + t('video/mp4; codecs="av01.0.12M.10.0.110.09.16.09.0"; width=3840; height=2160; eotf=smpte2084'));
++        out.push('ec3=' + t('audio/mp4; codecs="ec-3"') + ' ac3=' + t('audio/mp4; codecs="ac-3"') + ' opus=' + t('audio/webm; codecs="opus"'));
++        send(out.join(' '));
++    }, 8000);
++}, 2000);
 diff --git a/mods/features/audioFlapClock.js b/mods/features/audioFlapClock.js
 new file mode 100644
 index 0000000..250569b
@@ -3246,15 +3285,16 @@ index dc83f29..902884d 100644
          "chapters": {
              "title": "Chapitres",
 diff --git a/mods/userScript.js b/mods/userScript.js
-index f8a9c6e..18210d1 100644
+index f8a9c6e..c6b8df8 100644
 --- a/mods/userScript.js
 +++ b/mods/userScript.js
-@@ -19,6 +19,8 @@ import "./features/moreSubtitles.js";
+@@ -19,6 +19,9 @@ import "./features/moreSubtitles.js";
  import "./features/captionStylePersistence.js";
  import "./features/updater.js";
  import "./features/pictureInPicture.js";
 +import "./features/audioOnly.js";
 +import "./features/audioHue.js";
++import "./features/audioDiag.js";
  import "./features/preferredVideoQuality.js";
  import "./features/videoQueuing.js";
  import "./features/enableFeatures.js";
