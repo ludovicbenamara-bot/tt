@@ -162,14 +162,29 @@ index 0000000..2dfe900
 +}
 diff --git a/mods/features/audioDiag.js b/mods/features/audioDiag.js
 new file mode 100644
-index 0000000..94cb3cc
+index 0000000..393c865
 --- /dev/null
 +++ b/mods/features/audioDiag.js
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,49 @@
 +// TEMPORARY diagnostics: what picture and sound the player really gets.
 +import { mainPlayer, mainVideo } from './audioMainVideo.js';
 +
 +let lastId = null;
++// Audio formats offered in the player response (itag:mime:kbps).
++let audioFormats = {};
++const origParse = JSON.parse;
++JSON.parse = function () {
++    const r = origParse.apply(this, arguments);
++    try {
++        const f = r && r.streamingData && r.streamingData.adaptiveFormats;
++        const id = r && r.videoDetails && r.videoDetails.videoId;
++        if (f && id) {
++            audioFormats[id] = f.filter((x) => x.mimeType.indexOf('audio/') === 0)
++                .map((x) => x.itag + ':' + x.mimeType.split(';')[0].replace('audio/', '') + ':' + Math.round(x.bitrate / 1000) + (x.audioTrack ? ':' + x.audioTrack.displayName : '') + (x.audioChannels ? ':' + x.audioChannels + 'ch' : '')).join(',');
++        }
++    } catch (e) { }
++    return r;
++};
 +function send(info) {
 +    fetch('http://127.0.0.1:47913/status?info=' + encodeURIComponent(info), { cache: 'no-store' }).catch(() => { });
 +}
@@ -196,6 +211,7 @@ index 0000000..94cb3cc
 +        out.push('av1_4k=' + t('video/mp4; codecs="av01.0.12M.08"; width=3840; height=2160'));
 +        out.push('av1hdr=' + t('video/mp4; codecs="av01.0.12M.10.0.110.09.16.09.0"; width=3840; height=2160; eotf=smpte2084'));
 +        out.push('ec3=' + t('audio/mp4; codecs="ec-3"') + ' ac3=' + t('audio/mp4; codecs="ac-3"') + ' opus=' + t('audio/webm; codecs="opus"'));
++        out.push('audio=' + (audioFormats[id] || '?'));
 +        send(out.join(' '));
 +    }, 8000);
 +}, 2000);
