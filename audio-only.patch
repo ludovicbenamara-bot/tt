@@ -162,14 +162,17 @@ index 0000000..2dfe900
 +}
 diff --git a/mods/features/audioHue.js b/mods/features/audioHue.js
 new file mode 100644
-index 0000000..e67927c
+index 0000000..3760d73
 --- /dev/null
 +++ b/mods/features/audioHue.js
-@@ -0,0 +1,38 @@
+@@ -0,0 +1,152 @@
 +// Philips Hue ambiance: every time a new video starts (audio mode or not),
 +// the Hue strip is turned on in the artwork's dominant colour. The APK's
 +// local server talks to the Hue Bridge; the bridge address and key are set
 +// up once on the TV and are not part of this script.
++// The audio screen shows a Hue-app style tile (on/off, brightness) that uses
++// the `hue` controller exported here. When the user switches the strip off,
++// it stays off (new videos don't turn it back on) until switched on again.
 +
 +import { colorFromImage } from './audioSpectrum.js';
 +
@@ -178,8 +181,117 @@ index 0000000..e67927c
 +const VIDEO_ID_RE = /^[\w-]{11}$/;
 +// Colour for artwork without a clear hue: warm white.
 +const NEUTRAL_RGB = [255, 214, 170];
++const PREFS_KEY = 'tt-hue-prefs';
++const BRI_MIN = 3;
++const BRI_MAX = 254;
++const BRI_STEP = 25;
++// Brightness presses are grouped before being sent to the bridge.
++const BRI_SEND_DELAY_MS = 300;
++// The bridge takes a moment to report a change it has just applied.
++const REFRESH_AFTER_MS = 1500;
 +
 +let lastVideoId = null;
++let briTimer = null;
++const listeners = [];
++
++// Per-TV preferences: { off: bool, bri: 0 (automatic) or 1-254 }.
++function loadPrefs() {
++    try {
++        const prefs = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
++        return { off: !!prefs.off, bri: Number(prefs.bri) || 0 };
++    } catch (e) {
++        return { off: false, bri: 0 };
++    }
++}
++const prefs = loadPrefs();
++
++function savePrefs() {
++    try {
++        localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
++    } catch (e) { }
++}
++
++// configured: null until known; reachable: false when the bridge did not answer.
++const state = { configured: null, reachable: true, on: !prefs.off, bri: prefs.bri, name: '', rgb: null };
++
++function notify() {
++    for (const fn of listeners) {
++        try {
++            fn(state);
++        } catch (e) { }
++    }
++}
++
++function call(path) {
++    return fetch(HUE_URL + path, { cache: 'no-store' }).then((r) => r.text());
++}
++
++function refresh() {
++    return call('/state').then((text) => {
++        const data = JSON.parse(text);
++        state.configured = !!data.configured;
++        state.reachable = !data.error && data.reachable !== false;
++        if (data.error) return notify();
++        if (typeof data.on === 'boolean') state.on = data.on;
++        if (data.bri) state.bri = data.bri;
++        if (data.name) state.name = data.name;
++        notify();
++    }).catch(() => {
++        // No local server (simulation or older APK): hide the tile.
++        state.configured = false;
++        notify();
++    });
++}
++
++function refreshSoon() {
++    setTimeout(refresh, REFRESH_AFTER_MS);
++}
++
++function sendColor() {
++    const [r, g, b] = state.rgb || NEUTRAL_RGB;
++    return call(`?r=${r}&g=${g}&b=${b}&bri=${prefs.bri}`).then(refreshSoon, () => { });
++}
++
++function setOn(on) {
++    prefs.off = !on;
++    savePrefs();
++    state.on = on;
++    notify();
++    if (on) sendColor();
++    else call('/off').then(refreshSoon, () => { });
++}
++
++function stepBrightness(direction) {
++    if (!state.on) return;
++    const current = state.bri || prefs.bri || BRI_MAX;
++    const bri = Math.max(BRI_MIN, Math.min(BRI_MAX, current + direction * BRI_STEP));
++    if (bri === state.bri) return;
++    state.bri = bri;
++    prefs.bri = bri;
++    savePrefs();
++    notify();
++    clearTimeout(briTimer);
++    briTimer = setTimeout(sendColor, BRI_SEND_DELAY_MS);
++}
++
++export const hue = {
++    state,
++    refresh,
++    toggle() {
++        setOn(!state.on);
++    },
++    setOn,
++    stepBrightness,
++    // fn(state) on every change; returns nothing (the screen lives as long as the page).
++    subscribe(fn) {
++        listeners.push(fn);
++        fn(state);
++    },
++    // Brightness as a percentage, the way the Hue app shows it.
++    percent() {
++        return Math.max(1, Math.round(((state.bri || BRI_MAX) / BRI_MAX) * 100));
++    },
++};
 +
 +function currentVideoId() {
 +    const player = document.querySelector('.html5-video-player');
@@ -198,12 +310,119 @@ index 0000000..e67927c
 +    if (!video || video.paused) return;
 +    lastVideoId = videoId;
 +    colorFromImage(`https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, (rgb) => {
-+        const [r, g, b] = rgb || NEUTRAL_RGB;
-+        fetch(`${HUE_URL}?r=${r}&g=${g}&b=${b}`, { cache: 'no-store' }).catch(() => { });
++        state.rgb = rgb || NEUTRAL_RGB;
++        notify();
++        // Switched off by the user: keep it off.
++        if (!prefs.off) sendColor();
 +    });
 +}
 +
 +setInterval(check, CHECK_MS);
+diff --git a/mods/features/audioHueTile.js b/mods/features/audioHueTile.js
+new file mode 100644
+index 0000000..5a2a954
+--- /dev/null
++++ b/mods/features/audioHueTile.js
+@@ -0,0 +1,99 @@
++// Hue-app style light tile for the audio screen: bulb icon, light name,
++// state and brightness, an on/off switch, and a brightness bar along the
++// bottom. The tile takes the light's colour while it is on.
++// Remote (see audioOnly.js): Down selects it, OK switches the light,
++// Left/Right change the brightness, Up or Back leave it.
++
++import { t } from 'i18next';
++import { hue } from './audioHue.js';
++
++const SVG_NS = 'http://www.w3.org/2000/svg';
++const BULB = [
++    'M24 5a13.5 13.5 0 0 0-8 24.4c1.3 1 2 2.4 2 4V35h12v-1.6c0-1.6.7-3 2-4A13.5 13.5 0 0 0 24 5z',
++    'M18 38h12v3H18z',
++    'M20 43h8v.8a2.2 2.2 0 0 1-2.2 2.2h-3.6a2.2 2.2 0 0 1-2.2-2.2z',
++];
++
++function el(tag, className, text) {
++    const node = document.createElement(tag);
++    if (className) node.className = className;
++    if (text) node.textContent = text;
++    return node;
++}
++
++function bulbIcon() {
++    const svg = document.createElementNS(SVG_NS, 'svg');
++    svg.setAttribute('viewBox', '0 0 48 48');
++    svg.setAttribute('class', 'tt-hue-icon');
++    for (const d of BULB) {
++        const path = document.createElementNS(SVG_NS, 'path');
++        path.setAttribute('d', d);
++        svg.appendChild(path);
++    }
++    return svg;
++}
++
++export function createHueTile() {
++    const tile = el('button', 'tt-hue');
++    const iconWrap = el('div', 'tt-hue-icon-wrap');
++    iconWrap.appendChild(bulbIcon());
++    const text = el('div', 'tt-hue-text');
++    const name = el('div', 'tt-hue-name');
++    const status = el('div', 'tt-hue-status');
++    text.appendChild(name);
++    text.appendChild(status);
++    const toggle = el('div', 'tt-hue-switch');
++    toggle.appendChild(el('div', 'tt-hue-knob'));
++    const briTrack = el('div', 'tt-hue-bri');
++    const briFill = el('div', 'tt-hue-bri-fill');
++    briTrack.appendChild(briFill);
++    tile.appendChild(iconWrap);
++    tile.appendChild(text);
++    tile.appendChild(toggle);
++    tile.appendChild(briTrack);
++    tile.addEventListener('click', () => hue.toggle());
++
++    let focused = false;
++
++    function render(state) {
++        tile.style.display = state.configured ? '' : 'none';
++        name.textContent = state.name || t('player.audioOnly.hueName');
++        const on = state.on && state.reachable;
++        tile.classList.toggle('tt-hue-on', on);
++        if (!state.reachable) status.textContent = t('player.audioOnly.hueUnreachable');
++        else status.textContent = on ? t('player.audioOnly.hueOn', { bri: hue.percent() }) : t('player.audioOnly.hueOff');
++        briFill.style.width = on ? `${hue.percent()}%` : '0';
++        const [r, g, b] = state.rgb || [255, 214, 170];
++        // The Hue app paints the tile in the light's colour, fading to the right.
++        tile.style.background = on
++            ? `linear-gradient(90deg, rgba(${r}, ${g}, ${b}, 0.92) 0%, rgba(${r}, ${g}, ${b}, 0.5) 100%)`
++            : '';
++        iconWrap.style.color = on ? `rgb(${r}, ${g}, ${b})` : '';
++    }
++
++    hue.subscribe(render);
++
++    return {
++        element: tile,
++        // Asks the bridge for the light's real state (on/off, brightness).
++        refresh() {
++            hue.refresh();
++        },
++        isAvailable() {
++            return !!hue.state.configured;
++        },
++        isFocused() {
++            return focused;
++        },
++        setFocused(value) {
++            focused = !!value && !!hue.state.configured;
++            tile.classList.toggle('tt-hue-focused', focused);
++        },
++        toggle() {
++            hue.toggle();
++        },
++        stepBrightness(direction) {
++            hue.stepBrightness(direction);
++        },
++    };
++}
 diff --git a/mods/features/audioLedClock.js b/mods/features/audioLedClock.js
 new file mode 100644
 index 0000000..7a7a925
@@ -506,10 +725,10 @@ index 0000000..5513018
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..a2f7e7f
+index 0000000..e0b9ba8
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,569 @@
+@@ -0,0 +1,697 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -961,6 +1180,132 @@ index 0000000..a2f7e7f
 +    100% { transform: translate(-12%, -10%) scale(3.4) rotate(200deg); }
 +}
 +
++/* Philips Hue tile, drawn like a light in the Hue app. */
++.tt-hue {
++    position: relative;
++    display: flex;
++    align-items: center;
++    box-sizing: border-box;
++    width: 100%;
++    height: 9vh;
++    margin-top: 2.5vh;
++    padding: 0 2.4vh 0 1.6vh;
++    border: none;
++    border-radius: 2vh;
++    overflow: hidden;
++    background: rgba(255, 255, 255, 0.1);
++    color: rgba(255, 255, 255, 0.6);
++    font-family: inherit;
++    text-align: left;
++    cursor: pointer;
++    outline: none;
++    transition: background 0.6s ease, transform 0.15s ease, box-shadow 0.15s ease, opacity 1.5s ease;
++}
++
++.tt-hue-on {
++    color: #fff;
++}
++
++.tt-hue-focused {
++    transform: scale(1.02);
++    box-shadow: 0 0 0 0.4vh #fff, 0 1.5vh 4vh rgba(0, 0, 0, 0.45);
++}
++
++.tt-hue-icon-wrap {
++    flex: 0 0 auto;
++    display: flex;
++    align-items: center;
++    justify-content: center;
++    width: 6vh;
++    height: 6vh;
++    margin-right: 1.8vh;
++    border-radius: 50%;
++    background: rgba(255, 255, 255, 0.14);
++    color: rgba(255, 255, 255, 0.55);
++}
++
++.tt-hue-on .tt-hue-icon-wrap {
++    background: rgba(255, 255, 255, 0.92);
++}
++
++.tt-hue-icon {
++    width: 3.6vh;
++    height: 3.6vh;
++    fill: currentColor;
++}
++
++.tt-hue-text {
++    flex: 1 1 auto;
++    min-width: 0;
++}
++
++.tt-hue-name {
++    font-size: 2.4vh;
++    font-weight: 700;
++    white-space: nowrap;
++    overflow: hidden;
++    text-overflow: ellipsis;
++}
++
++.tt-hue-status {
++    margin-top: 0.3vh;
++    font-size: 1.9vh;
++    font-weight: 500;
++    opacity: 0.85;
++}
++
++.tt-hue-on .tt-hue-name,
++.tt-hue-on .tt-hue-status {
++    text-shadow: 0 0.1vh 0.4vh rgba(0, 0, 0, 0.35);
++}
++
++.tt-hue-switch {
++    flex: 0 0 auto;
++    position: relative;
++    width: 7vh;
++    height: 4vh;
++    border-radius: 2vh;
++    background: rgba(255, 255, 255, 0.22);
++    transition: background-color 0.25s ease;
++}
++
++.tt-hue-knob {
++    position: absolute;
++    top: 0.4vh;
++    left: 0.4vh;
++    width: 3.2vh;
++    height: 3.2vh;
++    border-radius: 50%;
++    background: #fff;
++    box-shadow: 0 0.2vh 0.6vh rgba(0, 0, 0, 0.3);
++    transition: transform 0.25s ease;
++}
++
++.tt-hue-on .tt-hue-switch {
++    background: rgba(255, 255, 255, 0.45);
++}
++
++.tt-hue-on .tt-hue-knob {
++    transform: translateX(3vh);
++}
++
++/* Brightness, along the bottom edge of the tile. */
++.tt-hue-bri {
++    position: absolute;
++    left: 0;
++    right: 0;
++    bottom: 0;
++    height: 0.7vh;
++    background: rgba(0, 0, 0, 0.18);
++}
++
++.tt-hue-bri-fill {
++    height: 100%;
++    width: 0;
++    background: rgba(255, 255, 255, 0.9);
++    transition: width 0.3s ease;
++}
++
 +/* Burn-in protection (see audioBurnIn.js). */
 +.tt-audio-content,
 +.tt-audio-footer {
@@ -981,6 +1326,7 @@ index 0000000..a2f7e7f
 +
 +/* Level 2: static UI fades down. */
 +.tt-audio-dim .tt-audio-controls,
++.tt-audio-dim .tt-hue,
 +.tt-audio-dim .tt-audio-progress,
 +.tt-audio-dim .tt-audio-footer {
 +    opacity: 0.35;
@@ -1000,6 +1346,7 @@ index 0000000..a2f7e7f
 +.tt-audio-ambient .tt-audio-spectrum,
 +.tt-audio-ambient .tt-audio-progress,
 +.tt-audio-ambient .tt-audio-controls,
++.tt-audio-ambient .tt-hue,
 +.tt-audio-ambient .tt-audio-footer {
 +    display: none;
 +}
@@ -1081,13 +1428,13 @@ index 0000000..a2f7e7f
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..c621afd
+index 0000000..76f872f
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,566 @@
+@@ -0,0 +1,603 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
-+// Left/Right = seek 10s, Back = leave audio mode.
++// Left/Right = seek 10s, Back = leave audio mode, Down = Hue tile.
 +
 +import { t } from 'i18next';
 +import css from './audioOnly.css';
@@ -1096,6 +1443,7 @@ index 0000000..c621afd
 +import { createSwissMap } from './audioMap.js';
 +import { createLedClock } from './audioLedClock.js';
 +import { createBurnInGuard } from './audioBurnIn.js';
++import { createHueTile } from './audioHueTile.js';
 +
 +const SEEK_STEP = 10;
 +// Channel up/down on the remote: Starboard key codes, Android's raw key codes,
@@ -1114,6 +1462,8 @@ index 0000000..c621afd
 +const MAX_MISSING_TICKS = 4;
 +// The YouTube button can fire its command more than once per press.
 +const TOGGLE_DEBOUNCE_MS = 600;
++// Re-read the Hue light's state now and then (it may be changed from the Hue app).
++const HUE_REFRESH_TICKS = 60;
 +
 +window.isAudioOnly = false;
 +
@@ -1123,6 +1473,7 @@ index 0000000..c621afd
 +let lastVideoId = null;
 +let missingTicks = 0;
 +let lastToggleAt = 0;
++let hueTicks = 0;
 +
 +function log(...args) {
 +    console.info('[AudioOnly]', ...args);
@@ -1285,6 +1636,10 @@ index 0000000..c621afd
 +    controls.appendChild(els.next);
 +    info.appendChild(controls);
 +
++    // Philips Hue strip, as a tile like in the Hue app, at the very bottom.
++    els.hue = createHueTile();
++    info.appendChild(els.hue.element);
++
 +    content.appendChild(info);
 +    overlay.appendChild(content);
 +
@@ -1427,6 +1782,10 @@ index 0000000..c621afd
 +    }
 +    missingTicks = 0;
 +    els.weather.refresh();
++    if (++hueTicks >= HUE_REFRESH_TICKS) {
++        hueTicks = 0;
++        els.hue.refresh();
++    }
 +    updateMetadata();
 +    updateProgress();
 +}
@@ -1566,6 +1925,27 @@ index 0000000..c621afd
 +        return false;
 +    }
 +
++    // Hue tile selected: OK switches the strip, Left/Right set the brightness.
++    if (els.hue.isFocused()) {
++        let hueKey = true;
++        if (evt.keyCode === 13 || evt.keyCode === 32) {
++            if (evt.type === 'keydown') els.hue.toggle();
++        } else if (evt.keyCode === 37 || evt.keyCode === 39) {
++            if (evt.type === 'keydown') els.hue.stepBrightness(evt.keyCode === 39 ? 1 : -1);
++        } else if (evt.keyCode === 38 || BACK_KEYS.indexOf(evt.keyCode) !== -1) {
++            if (evt.type === 'keydown') els.hue.setFocused(false);
++        } else if (evt.keyCode === 40) {
++            // Already at the bottom.
++        } else {
++            hueKey = false;
++        }
++        if (hueKey) {
++            evt.preventDefault();
++            evt.stopPropagation();
++            return false;
++        }
++    }
++
 +    let handled = true;
 +    if (evt.keyCode === 13 || evt.keyCode === 32) {
 +        if (evt.type === 'keydown') togglePlay();
@@ -1579,7 +1959,9 @@ index 0000000..c621afd
 +        if (evt.type === 'keydown') nextTrack();
 +    } else if (PREVIOUS_KEYS.indexOf(evt.keyCode) !== -1) {
 +        if (evt.type === 'keydown') previousTrack();
-+    } else if (evt.keyCode === 38 || evt.keyCode === 40) {
++    } else if (evt.keyCode === 40) {
++        if (evt.type === 'keydown') els.hue.setFocused(true);
++    } else if (evt.keyCode === 38) {
 +        // Swallow so the hidden YouTube UI underneath doesn't move.
 +    } else {
 +        // Media keys (play/pause, next, previous...) go to YouTube as usual.
@@ -1616,6 +1998,8 @@ index 0000000..c621afd
 +    overlay.style.display = 'flex';
 +    log('enabled');
 +    tick();
++    els.hue.setFocused(false);
++    els.hue.refresh();
 +    els.burnIn.reset();
 +    els.spectrum.start();
 +    tickInterval = setInterval(tick, 500);
@@ -2312,10 +2696,10 @@ index 3d2d10d..d9b7216 100644
              window.h5vcc.tizentube.EnterPIP();
              break;
 diff --git a/mods/translations/resources/en.json b/mods/translations/resources/en.json
-index 741901a..e4eb8f3 100644
+index 741901a..7e208c2 100644
 --- a/mods/translations/resources/en.json
 +++ b/mods/translations/resources/en.json
-@@ -294,6 +294,23 @@
+@@ -294,6 +294,27 @@
              "button": "Share",
              "qrCodeScanMessage": "Scan the QR code below to share this video."
          },
@@ -2332,6 +2716,10 @@ index 741901a..e4eb8f3 100644
 +                "snow": "Snow",
 +                "storm": "Storm"
 +            },
++            "hueOn": "On · {{bri}} %",
++            "hueOff": "Off",
++            "hueUnreachable": "Unreachable",
++            "hueName": "Hue strip",
 +            "today": "Today",
 +            "live": "Live",
 +            "hint": "OK: play/pause  ·  ◀ ▶: 10 s  ·  CH +/−: next/previous  ·  Back: show video"
@@ -2340,10 +2728,10 @@ index 741901a..e4eb8f3 100644
          "chapters": {
              "title": "Chapters",
 diff --git a/mods/translations/resources/fr.json b/mods/translations/resources/fr.json
-index dc83f29..3536878 100644
+index dc83f29..cba4996 100644
 --- a/mods/translations/resources/fr.json
 +++ b/mods/translations/resources/fr.json
-@@ -294,6 +294,23 @@
+@@ -294,6 +294,27 @@
              "button": "Partager",
              "qrCodeScanMessage": "Scannez le code QR ci-dessous pour partager cette vidéo."
          },
@@ -2360,6 +2748,10 @@ index dc83f29..3536878 100644
 +                "snow": "Neige",
 +                "storm": "Orage"
 +            },
++            "hueOn": "Allumée · {{bri}} %",
++            "hueOff": "Éteinte",
++            "hueUnreachable": "Injoignable",
++            "hueName": "Bande Hue",
 +            "today": "Auj.",
 +            "live": "En direct",
 +            "hint": "OK : lecture/pause  ·  ◀ ▶ : 10 s  ·  CH +/− : suivant/précédent  ·  Retour : afficher la vidéo"

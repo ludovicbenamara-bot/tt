@@ -10,6 +10,7 @@ Version modifiée du script de [TizenTube](https://github.com/reisxd/TizenTube) 
 - **Carte météo de la Suisse** (données MétéoSuisse, contour et lacs swisstopo) avec 16 villes ; la pochette, réduite, est à côté du titre.
 - **Horloge LED à points** (heure, anneau des secondes, date) aux couleurs de la pochette.
 - **Ambiance Philips Hue** : à chaque vidéo, une bande Hue s'allume dans la couleur de la pochette (via le pont Hue local).
+  Sur l'écran audio, une tuile façon application Hue (sous les commandes) allume ou éteint la bande et règle sa luminosité : flèche bas pour la sélectionner, OK pour allumer/éteindre, ◀ ▶ pour la luminosité, flèche haut pour revenir. Éteinte, elle reste éteinte aux vidéos suivantes jusqu'à ce qu'on la rallume.
 - **Météo sur 5 jours** (MétéoSuisse pour la localité la plus proche ; icônes en couleur, températures max / min).
 - **Télécommande** : OK = lecture / pause, ◀ ▶ = ±10 s, CH+ / CH− = morceau suivant / précédent, Retour = revenir à la vidéo.
 - **Protection anti-marquage** de l'écran :
