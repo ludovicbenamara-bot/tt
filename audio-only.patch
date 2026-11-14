@@ -725,10 +725,10 @@ index 0000000..5513018
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..7af5545
+index 0000000..2b6fbf0
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,704 @@
+@@ -0,0 +1,705 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -841,9 +841,9 @@ index 0000000..7af5545
 +.tt-audio-title-row {
 +    display: flex;
 +    align-items: center;
-+    /* Free height goes above the title: the whole player sits low, ending
-+       level with the bottom of the map. */
-+    margin-top: auto;
++    /* Centred on the LED clock (17vh high, at the top of the left column):
++       the 21vh artwork overhangs it by 2vh above and below. */
++    margin-top: -2vh;
 +}
 +
 +.tt-audio-title-text {
@@ -1040,7 +1040,8 @@ index 0000000..7af5545
 +    width: 100%;
 +    flex: 0 0 15vh;
 +    height: 15vh;
-+    margin: 3.5vh 0 2.5vh;
++    /* Centred in the room between the title and the progress bar. */
++    margin: auto 0;
 +}
 +
 +.tt-audio-bar {
