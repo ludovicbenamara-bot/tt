@@ -698,10 +698,10 @@ index 0000000..7a7a925
 +}
 diff --git a/mods/features/audioMainVideo.js b/mods/features/audioMainVideo.js
 new file mode 100644
-index 0000000..6e5c24a
+index 0000000..2d7db50
 --- /dev/null
 +++ b/mods/features/audioMainVideo.js
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,53 @@
 +// YouTube TV can keep more than one <video> in the page (e.g. a stalled
 +// preview that still reports "playing"), so "the first <video>" is not always
 +// the one heard. The main video is the one whose time is moving, then one not
@@ -712,19 +712,35 @@ index 0000000..6e5c24a
 +    return Math.max(0, r.width) * Math.max(0, r.height);
 +}
 +
-+// Last currentTime seen for each element (the audio screen asks twice a second).
-+const lastTimes = new WeakMap();
++// A reading of each element's currentTime, kept at least SAMPLE_MS old: the
++// page asks several times in the same instant, and two readings taken a few
++// microseconds apart never show the time moving.
++const SAMPLE_MS = 250;
++const samples = new WeakMap();
++
++function isMoving(v, now) {
++    const sample = samples.get(v);
++    if (!sample || now - sample.at > 5000) {
++        samples.set(v, { time: v.currentTime, at: now, moving: false });
++        return false;
++    }
++    if (now - sample.at >= SAMPLE_MS) {
++        sample.moving = v.currentTime !== sample.time;
++        sample.time = v.currentTime;
++        sample.at = now;
++    }
++    return sample.moving;
++}
 +
 +export function mainVideo() {
 +    const videos = document.getElementsByTagName('video');
 +    if (videos.length <= 1) return videos[0] || null;
++    const now = Date.now();
 +    let best = null;
 +    let bestScore = -1;
 +    for (let i = 0; i < videos.length; i++) {
 +        const v = videos[i];
-+        const before = lastTimes.get(v);
-+        lastTimes.set(v, v.currentTime);
-+        const moving = before !== undefined && v.currentTime !== before;
++        const moving = isMoving(v, now);
 +        const score = (moving ? 2e9 : 0) + (v.paused ? 0 : 1e9) + area(v);
 +        if (score > bestScore) {
 +            best = v;
