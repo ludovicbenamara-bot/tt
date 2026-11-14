@@ -1436,10 +1436,10 @@ index 0000000..2b6fbf0
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..76f872f
+index 0000000..0a0cdf0
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,603 @@
+@@ -0,0 +1,606 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode, Down = Hue tile.
@@ -2036,6 +2036,9 @@ index 0000000..76f872f
 +}
 +
 +log('loaded');
++// Tells the APK's local server the script is running (written to the TV's
++// system log; publier.sh uses it to check an install).
++fetch('http://127.0.0.1:47913/status?from=script', { cache: 'no-store' }).catch(() => { });
 +
 +window.addEventListener('keydown', trackFocus, true);
 +window.addEventListener('keydown', keyHandler, true);
