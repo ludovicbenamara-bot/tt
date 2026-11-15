@@ -671,10 +671,10 @@ index 0000000..2d7db50
 +}
 diff --git a/mods/features/audioNews.js b/mods/features/audioNews.js
 new file mode 100644
-index 0000000..087313a
+index 0000000..6787d28
 --- /dev/null
 +++ b/mods/features/audioNews.js
-@@ -0,0 +1,185 @@
+@@ -0,0 +1,200 @@
 +// Science news under the forecast: headlines from Reddit's r/science, fetched
 +// by the APK's local server (the page itself cannot reach Reddit). Four
 +// headlines at a time, the page changing every 30 seconds. With the remote a
@@ -716,7 +716,23 @@ index 0000000..087313a
 +    const readerBox = el('div', 'tt-audio-reader-box');
 +    const readerSite = el('div', 'tt-audio-reader-site');
 +    const readerTitle = el('div', 'tt-audio-reader-title');
++    // The text moves inside a clipped box (translateY): Cobalt, the TV's
++    // browser engine, does not scroll an overflow:hidden box from script.
 +    const readerBody = el('div', 'tt-audio-reader-body');
++    const readerText = el('div', 'tt-audio-reader-text');
++    readerBody.appendChild(readerText);
++    let offset = 0;
++
++    function setOffset(value) {
++        const max = Math.max(0, readerText.offsetHeight - readerBody.clientHeight);
++        offset = Math.max(0, Math.min(max, value));
++        readerText.style.transform = `translateY(${-Math.round(offset)}px)`;
++    }
++
++    function clearText() {
++        while (readerText.firstChild) readerText.removeChild(readerText.firstChild);
++        setOffset(0);
++    }
 +    const readerHint = el('div', 'tt-audio-reader-hint', '▲ ▼  ·  OK / ⟵');
 +    readerBox.appendChild(readerSite);
 +    readerBox.appendChild(readerTitle);
@@ -780,24 +796,23 @@ index 0000000..087313a
 +        const request = ++articleRequest;
 +        readerSite.textContent = 'r/science';
 +        readerTitle.textContent = item.title;
-+        while (readerBody.firstChild) readerBody.removeChild(readerBody.firstChild);
-+        readerBody.appendChild(el('p', 'tt-audio-reader-note', L.loading));
-+        readerBody.scrollTop = 0;
++        clearText();
++        readerText.appendChild(el('p', 'tt-audio-reader-note', L.loading));
 +        reader.style.display = '';
 +        fetch(`${ARTICLE_URL}?i=${index}`, { cache: 'no-store' })
 +            .then((r) => r.json())
 +            .then((a) => {
 +                if (request !== articleRequest) return;
-+                while (readerBody.firstChild) readerBody.removeChild(readerBody.firstChild);
++                clearText();
 +                readerSite.textContent = a.site || 'r/science';
-+                if (!a.full) readerBody.appendChild(el('p', 'tt-audio-reader-note', L.unavailable));
-+                for (const text of a.paragraphs || []) readerBody.appendChild(el('p', '', text));
++                if (!a.full) readerText.appendChild(el('p', 'tt-audio-reader-note', L.unavailable));
++                for (const text of a.paragraphs || []) readerText.appendChild(el('p', '', text));
 +            })
 +            .catch(() => {
 +                if (request !== articleRequest) return;
-+                while (readerBody.firstChild) readerBody.removeChild(readerBody.firstChild);
-+                readerBody.appendChild(el('p', 'tt-audio-reader-note', L.unavailable));
-+                readerBody.appendChild(el('p', '', item.title));
++                clearText();
++                readerText.appendChild(el('p', 'tt-audio-reader-note', L.unavailable));
++                readerText.appendChild(el('p', '', item.title));
 +            });
 +    }
 +
@@ -855,17 +870,17 @@ index 0000000..087313a
 +        },
 +        // Reading panel: scroll by about a third of its height.
 +        scroll(direction) {
-+            readerBody.scrollTop += direction * readerBody.clientHeight * 0.35;
++            setOffset(offset + direction * readerBody.clientHeight * 0.4);
 +        },
 +        closeReader,
 +    };
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..af00f32
+index 0000000..96760ad
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,1819 @@
+@@ -0,0 +1,1829 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -2684,6 +2699,16 @@ index 0000000..af00f32
 +    width: calc(96.2vw / 0.94);
 +    flex: 0 0 auto;
 +    transform-origin: center center;
++}
++
++/* Article text moved by script inside the clipped reading box. */
++.tt-audio-reader-body {
++    position: relative;
++}
++
++.tt-audio-reader-text {
++    will-change: transform;
++    transition: transform 0.2s ease;
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
