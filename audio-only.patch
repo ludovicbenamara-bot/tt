@@ -474,10 +474,10 @@ index 0000000..9454356
 +setInterval(check, CHECK_MS);
 diff --git a/mods/features/audioHueTile.js b/mods/features/audioHueTile.js
 new file mode 100644
-index 0000000..75f3097
+index 0000000..1176d9f
 --- /dev/null
 +++ b/mods/features/audioHueTile.js
-@@ -0,0 +1,132 @@
+@@ -0,0 +1,139 @@
 +// Hue-app style light tile for the audio screen: bulb icon, light name,
 +// state and brightness, an on/off switch, and a brightness bar along the
 +// bottom. The tile takes the light's colour while it is on.
@@ -566,7 +566,14 @@ index 0000000..75f3097
 +        tile.style.background = on
 +            ? `linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.04) 100%), linear-gradient(90deg, rgba(${r}, ${g}, ${b}, 0.5) 0%, rgba(${r}, ${g}, ${b}, 0.16) 100%)`
 +            : '';
-+        iconWrap.style.color = on ? `rgb(${r}, ${g}, ${b})` : '';
++        // Light orb: filled with the light's colour and glowing when on,
++        // an empty ring when off.
++        iconWrap.style.background = on ? `rgb(${r}, ${g}, ${b})` : '';
++        iconWrap.style.boxShadow = on ? `0 0 2.6vh rgba(${r}, ${g}, ${b}, 0.6)` : '';
++        iconWrap.style.color = on ? 'rgba(0, 0, 0, 0.72)' : '';
++        briFill.style.background = on ? `rgb(${r}, ${g}, ${b})` : '';
++        // Flat theme: the light's colour as a thin bar on the tile's left edge.
++        tile.style.borderLeftColor = on ? `rgb(${r}, ${g}, ${b})` : 'rgba(255, 255, 255, 0.15)';
 +    }
 +
 +    hue.subscribe(render);
@@ -877,10 +884,10 @@ index 0000000..6787d28
 +}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..96760ad
+index 0000000..658d382
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,1829 @@
+@@ -0,0 +1,2322 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -2709,6 +2716,499 @@ index 0000000..96760ad
 +.tt-audio-reader-text {
 +    will-change: transform;
 +    transition: transform 0.2s ease;
++}
++
++/* ========================================================================
++   Flat zen theme: flat, quiet surfaces (no glass, gradients, reflections or
++   shadows), a dark muted background, light typography, minimal controls.
++   ======================================================================== */
++.tt-audio {
++    background: #0e0f11;
++}
++
++.tt-audio-backdrop {
++    opacity: 0.4 !important;
++    filter: blur(28px) saturate(0.55) brightness(0.6);
++}
++
++.tt-audio-backdrop-2 {
++    opacity: 0.15 !important;
++}
++
++.tt-audio-shade {
++    background: rgba(10, 11, 13, 0.55) !important;
++}
++
++/* One flat surface for every tile and card. */
++.tt-audio-weather-day,
++.tt-audio-weather-day:first-child,
++.tt-audio-news,
++.tt-hue,
++.tt-audio-map {
++    background: rgba(255, 255, 255, 0.05) !important;
++    box-shadow: none !important;
++    border-radius: 1.2vh;
++}
++
++.tt-audio-weather-day:first-child {
++    background: rgba(255, 255, 255, 0.1) !important;
++}
++
++.tt-audio-weather-temps span,
++.tt-audio-map-temps span {
++    background: none;
++    padding: 0 0.4vh;
++}
++
++.tt-audio-weather-temps span:first-child {
++    color: rgba(255, 255, 255, 0.55);
++}
++
++.tt-audio-weather-label,
++.tt-audio-news-head,
++.tt-flap-label {
++    font-weight: 500;
++    letter-spacing: 0.12em;
++    text-transform: uppercase;
++    color: rgba(255, 255, 255, 0.55);
++}
++
++.tt-audio-weather-label {
++    font-size: 1.7vh;
++}
++
++.tt-audio-weather-icon {
++    filter: none;
++}
++
++/* Clock: flat dark cards, a hairline instead of the hinge and its pins. */
++.tt-flap-card {
++    background: rgba(255, 255, 255, 0.06) !important;
++    box-shadow: none !important;
++}
++
++.tt-flap-hinge {
++    height: 0.12vh;
++    background: rgba(14, 15, 17, 0.9);
++}
++
++.tt-flap-hinge::before,
++.tt-flap-hinge::after {
++    display: none;
++}
++
++.tt-flap-char {
++    font-weight: 300;
++    color: rgba(255, 255, 255, 0.92);
++}
++
++/* Artwork: flat, softly rounded, no shadow. */
++.tt-audio-art {
++    box-shadow: none !important;
++    border-radius: 1.6vh;
++}
++
++.tt-audio-title {
++    font-weight: 500;
++    letter-spacing: 0;
++    text-shadow: none;
++}
++
++.tt-audio-author {
++    font-weight: 300;
++    color: rgba(255, 255, 255, 0.55);
++}
++
++/* Progress: a thin line, a small dot. */
++.tt-audio-bar,
++.tt-audio-seeking .tt-audio-bar {
++    height: 0.4vh;
++    background: rgba(255, 255, 255, 0.12);
++}
++
++.tt-audio-buffered {
++    background: rgba(255, 255, 255, 0.08);
++}
++
++.tt-audio-knob {
++    left: -0.7vh;
++    width: 1.4vh;
++    height: 1.4vh;
++    box-shadow: none !important;
++}
++
++.tt-audio-seeking .tt-audio-knob {
++    left: -0.9vh;
++    width: 1.8vh;
++    height: 1.8vh;
++}
++
++.tt-audio-times {
++    font-weight: 400;
++}
++
++/* Controls: bare icons; only play / pause keeps a plain disc. */
++.tt-audio-btn {
++    background: none !important;
++    box-shadow: none !important;
++    color: rgba(255, 255, 255, 0.8);
++}
++
++.tt-audio-btn-main {
++    background: rgba(255, 255, 255, 0.1) !important;
++    color: #fff;
++}
++
++/* Hue tile: flat, the light's colour only as a thin bar on the left. */
++.tt-hue {
++    border-left: 0.5vh solid rgba(255, 255, 255, 0.15);
++}
++
++.tt-hue-on {
++    color: #fff;
++}
++
++.tt-hue-icon-wrap,
++.tt-hue-on .tt-hue-icon-wrap {
++    background: none;
++}
++
++.tt-hue-rhythm,
++.tt-hue-switch {
++    background: rgba(255, 255, 255, 0.08) !important;
++    box-shadow: none !important;
++}
++
++.tt-hue-rhythm-on {
++    background: rgba(255, 255, 255, 0.85) !important;
++}
++
++.tt-hue-on .tt-hue-switch {
++    background: rgba(255, 255, 255, 0.35) !important;
++}
++
++.tt-hue-knob {
++    box-shadow: none;
++}
++
++/* News: flat list, quiet selection. */
++.tt-audio-news-item .tt-audio-news-title {
++    font-weight: 400;
++}
++
++.tt-audio-news-dot {
++    width: 0.6vh;
++    height: 0.6vh;
++    background: rgba(255, 255, 255, 0.4);
++}
++
++.tt-audio-news-source {
++    color: rgba(255, 255, 255, 0.55);
++}
++
++.tt-audio-news-selected {
++    background: rgba(255, 255, 255, 0.1) !important;
++    box-shadow: inset 0.4vh 0 0 #fff !important;
++}
++
++/* Reading panel: flat. */
++.tt-audio-reader-box {
++    background: #17181b !important;
++    box-shadow: none !important;
++}
++
++.tt-audio-reader-title {
++    font-weight: 500;
++}
++
++.tt-audio-reader-body {
++    font-weight: 300;
++}
++
++.tt-audio-reader-site {
++    font-weight: 500;
++    color: rgba(255, 255, 255, 0.5);
++}
++
++/* Flat zen clock and date: no flap cards, no hinges, no group labels; thin
++   digits floating on the background, a quieter smaller date underneath. */
++.tt-flap-card,
++.tt-flap-row-date .tt-flap-card {
++    background: none !important;
++    box-shadow: none !important;
++    width: auto;
++    min-width: 0;
++}
++
++.tt-flap-hinge {
++    display: none;
++}
++
++.tt-flap-label {
++    display: none;
++}
++
++.tt-flap-cards {
++    gap: 0;
++}
++
++.tt-flap-card + .tt-flap-card {
++    margin-left: 0;
++}
++
++.tt-flap-char {
++    font-family: -apple-system, 'SF Pro Display', 'Helvetica Neue', Roboto, Arial, sans-serif;
++    font-size: 20vh;
++    font-weight: 200;
++    line-height: 20vh;
++    letter-spacing: -0.02em;
++    font-variant-numeric: tabular-nums;
++    color: rgba(255, 255, 255, 0.92);
++}
++
++.tt-flap-row {
++    justify-content: center;
++}
++
++.tt-flap-colon {
++    height: 20vh;
++    margin: 0 1.8vh;
++}
++
++.tt-flap-colon i {
++    width: 1vh;
++    height: 1vh;
++    border-radius: 50%;
++}
++
++.tt-flap-colon i + i {
++    margin-top: 3.4vh;
++}
++
++/* Seconds: same line, smaller and dimmer. */
++.tt-flap-row:not(.tt-flap-row-date) .tt-flap-group:last-child .tt-flap-char {
++    font-size: 8vh;
++    line-height: 8vh;
++    color: rgba(255, 255, 255, 0.45);
++}
++
++.tt-flap-row:not(.tt-flap-row-date) .tt-flap-group:last-child .tt-flap-card {
++    height: auto;
++}
++
++.tt-flap-row:not(.tt-flap-row-date) > .tt-flap-colon:nth-child(4) {
++    display: none;
++}
++
++.tt-flap-row:not(.tt-flap-row-date) > .tt-flap-group:last-child {
++    align-self: flex-end;
++    margin: 0 0 2.6vh 1.4vh;
++}
++
++/* Date: one quiet line, letter-spaced. */
++.tt-flap-row-date {
++    justify-content: center;
++    margin-top: 0.4vh;
++}
++
++.tt-flap-row-date .tt-flap-card {
++    height: auto;
++}
++
++.tt-flap-row-date .tt-flap-char {
++    font-size: 3.8vh;
++    line-height: 5vh;
++    font-weight: 400;
++    letter-spacing: 0.3em;
++    color: rgba(255, 255, 255, 0.55);
++}
++
++.tt-flap-row-date .tt-flap-group + .tt-flap-group {
++    margin-left: 2.4vh;
++}
++
++/* Flat clock: cards sized by their digits (no fixed flap height, no clipping). */
++.tt-flap-card,
++.tt-flap-row-date .tt-flap-card {
++    height: auto !important;
++    overflow: visible;
++}
++
++.tt-flap-colon i + i {
++    margin-top: 4.6vh;
++}
++
++.tt-flap-row-date {
++    margin-top: 1.2vh;
++}
++
++/* No backgrounds behind the icons and tiles: everything floats on the
++   (transparent) audio screen. The clock is left as it is. */
++.tt-audio-weather-day,
++.tt-audio-weather-day:first-child,
++.tt-audio-news,
++.tt-hue,
++.tt-audio-btn-main,
++.tt-audio-news-selected {
++    background: none !important;
++    box-shadow: none !important;
++}
++
++/* Today: told apart by a white label instead of a lighter tile. */
++.tt-audio-weather-day:first-child .tt-audio-weather-label {
++    color: #fff;
++    font-weight: 700;
++}
++
++/* Play / pause: a thin ring instead of a filled disc. */
++.tt-audio-btn-main {
++    box-shadow: inset 0 0 0 0.2vh rgba(255, 255, 255, 0.5) !important;
++}
++
++/* News: no card; the selected headline keeps a white line on its left. */
++.tt-audio-news {
++    padding-left: 0;
++    padding-right: 0;
++}
++
++.tt-audio-news-selected {
++    box-shadow: inset 0.4vh 0 0 #fff !important;
++}
++
++/* Hue tile: no background, only the thin bar in the light's colour. */
++.tt-hue {
++    padding-left: 1.4vh;
++}
++
++/* Hue tile, flat zen: a glowing "light orb" in the strip's colour, larger
++   text, the brightness as a thin line in the light's colour. */
++.tt-hue {
++    height: 7vh;
++    padding: 0 0.4vh 0 0 !important;
++    border-left: none !important;
++    overflow: visible;
++}
++
++.tt-hue-icon-wrap,
++.tt-hue-on .tt-hue-icon-wrap {
++    width: 4.6vh;
++    height: 4.6vh;
++    margin: 0 1.8vh 0 0.2vh;
++    border-radius: 50%;
++    box-shadow: inset 0 0 0 0.2vh rgba(255, 255, 255, 0.3);
++    color: rgba(255, 255, 255, 0.45);
++    transition: background-color 0.6s ease, box-shadow 0.6s ease;
++}
++
++.tt-hue-icon {
++    width: 2.6vh;
++    height: 2.6vh;
++}
++
++.tt-hue-text {
++    flex-direction: column;
++    align-items: flex-start;
++    justify-content: center;
++}
++
++.tt-hue-name {
++    font-size: 2.2vh;
++    font-weight: 500;
++    text-shadow: none !important;
++}
++
++.tt-hue-status {
++    margin: 0.3vh 0 0;
++    font-size: 1.6vh;
++    font-weight: 400;
++    color: rgba(255, 255, 255, 0.55);
++    text-shadow: none !important;
++}
++
++/* Brightness: a thin line under the text, in the light's colour (set in JS). */
++.tt-hue-bri {
++    left: 6.6vh;
++    right: 17vh;
++    bottom: 0.9vh;
++    height: 0.25vh;
++    border-radius: 0.2vh;
++    background: rgba(255, 255, 255, 0.12);
++}
++
++.tt-hue-bri-fill {
++    border-radius: 0.2vh;
++}
++
++.tt-hue-rhythm {
++    height: 3vh;
++    padding: 0 1.3vh;
++    border-radius: 1.5vh;
++    font-size: 1.6vh;
++    font-weight: 500;
++    background: none !important;
++    box-shadow: inset 0 0 0 0.15vh rgba(255, 255, 255, 0.4) !important;
++    color: rgba(255, 255, 255, 0.75);
++}
++
++.tt-hue-rhythm-on {
++    background: rgba(255, 255, 255, 0.9) !important;
++    box-shadow: none !important;
++    color: rgba(0, 0, 0, 0.75);
++}
++
++.tt-hue-switch {
++    width: 5.2vh;
++    height: 3vh;
++    border-radius: 1.5vh;
++}
++
++.tt-hue-knob {
++    top: 0.35vh;
++    left: 0.35vh;
++    width: 2.3vh;
++    height: 2.3vh;
++}
++
++.tt-hue-on .tt-hue-knob {
++    transform: translateX(2.2vh);
++}
++
++/* Hue: brightness line under the status text, not across it. */
++.tt-hue-text {
++    padding-bottom: 1vh;
++}
++
++.tt-hue-bri {
++    bottom: 0.3vh;
++}
++
++/* Bigger clock (the date keeps its size), still within the left column. */
++.tt-flap-row:not(.tt-flap-row-date) .tt-flap-char {
++    font-size: 27vh;
++    line-height: 25vh;
++}
++
++.tt-flap-row:not(.tt-flap-row-date) .tt-flap-colon {
++    height: 25vh;
++    margin: 0 2.2vh;
++}
++
++.tt-flap-row:not(.tt-flap-row-date) .tt-flap-colon i {
++    width: 1.3vh;
++    height: 1.3vh;
++}
++
++.tt-flap-row:not(.tt-flap-row-date) .tt-flap-colon i + i {
++    margin-top: 6vh;
++}
++
++.tt-flap-row:not(.tt-flap-row-date) .tt-flap-group:last-child .tt-flap-char {
++    font-size: 10vh;
++    line-height: 10vh;
++}
++
++.tt-flap-row:not(.tt-flap-row-date) > .tt-flap-group:last-child {
++    margin: 0 0 3.4vh 1.8vh;
 +}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
