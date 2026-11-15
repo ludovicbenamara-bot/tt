@@ -669,12 +669,203 @@ index 0000000..2d7db50
 +    const player = video && video.closest ? video.closest('.html5-video-player') : null;
 +    return player || document.querySelector('.html5-video-player');
 +}
+diff --git a/mods/features/audioNews.js b/mods/features/audioNews.js
+new file mode 100644
+index 0000000..a96e3a9
+--- /dev/null
++++ b/mods/features/audioNews.js
+@@ -0,0 +1,185 @@
++// Science news under the forecast: headlines from Reddit's r/science, fetched
++// by the APK's local server (the page itself cannot reach Reddit). Four
++// headlines at a time, the page changing every 15 seconds. With the remote a
++// headline can be selected and opened: the APK downloads the source article
++// and returns its text, shown in a large reading panel.
++//
++// Remote (see audioOnly.js): Up selects the headlines, Up / Down move, OK
++// opens, Back leaves; in the reading panel Up / Down scroll, Back / OK close.
++
++const NEWS_URL = 'http://127.0.0.1:47913/news';
++const ARTICLE_URL = 'http://127.0.0.1:47913/news/article';
++const PER_PAGE = 4;
++const PAGE_MS = 15000;
++const RELOAD_MS = 30 * 60 * 1000;
++
++function el(tag, className, text) {
++    const node = document.createElement(tag);
++    if (className) node.className = className;
++    if (text) node.textContent = text;
++    return node;
++}
++
++export function createNews(texts) {
++    const L = Object.assign({ loading: 'Loading…', unavailable: 'Full article unavailable: Reddit summary.' }, texts);
++
++    // Headlines card.
++    const card = el('div', 'tt-audio-news');
++    const head = el('div', 'tt-audio-news-head');
++    head.appendChild(el('span', 'tt-audio-news-source', 'r/science'));
++    const count = el('span', 'tt-audio-news-count');
++    head.appendChild(count);
++    card.appendChild(head);
++    const list = el('div', 'tt-audio-news-list');
++    card.appendChild(list);
++    card.style.display = 'none';
++
++    // Reading panel (added to the audio screen by audioOnly.js).
++    const reader = el('div', 'tt-audio-reader');
++    const readerBox = el('div', 'tt-audio-reader-box');
++    const readerSite = el('div', 'tt-audio-reader-site');
++    const readerTitle = el('div', 'tt-audio-reader-title');
++    const readerBody = el('div', 'tt-audio-reader-body');
++    const readerHint = el('div', 'tt-audio-reader-hint', '▲ ▼  ·  OK / ⟵');
++    readerBox.appendChild(readerSite);
++    readerBox.appendChild(readerTitle);
++    readerBox.appendChild(readerBody);
++    reader.appendChild(readerBox);
++    reader.appendChild(readerHint);
++    reader.style.display = 'none';
++
++    let items = [];
++    let page = 0;
++    let selected = -1;      // index in the page while the headlines have focus
++    let pageTimer = null;
++    let loadedAt = 0;
++    let readerOpen = false;
++    let articleRequest = 0;
++
++    function pages() {
++        return Math.max(1, Math.ceil(items.length / PER_PAGE));
++    }
++
++    function render() {
++        while (list.firstChild) list.removeChild(list.firstChild);
++        const start = page * PER_PAGE;
++        items.slice(start, start + PER_PAGE).forEach((item, i) => {
++            const row = el('div', 'tt-audio-news-item' + (i === selected ? ' tt-audio-news-selected' : ''));
++            row.appendChild(el('span', 'tt-audio-news-dot'));
++            row.appendChild(el('span', 'tt-audio-news-title', item.title));
++            row.addEventListener('click', () => open(start + i));
++            list.appendChild(row);
++        });
++        count.textContent = `${page + 1} / ${pages()}`;
++    }
++
++    function load() {
++        loadedAt = Date.now();
++        fetch(NEWS_URL, { cache: 'no-store' })
++            .then((r) => r.json())
++            .then((data) => {
++                const fresh = (data && data.items || []).filter((i) => i && i.title);
++                if (!fresh.length) return;
++                items = fresh;
++                page = 0;
++                card.style.display = '';
++                render();
++            })
++            .catch(() => { });
++    }
++
++    function nextPage() {
++        if (Date.now() - loadedAt > RELOAD_MS) load();
++        // Do not turn the page under the remote's selection.
++        if (selected >= 0 || readerOpen || !items.length) return;
++        page = (page + 1) % pages();
++        render();
++    }
++
++    function open(index) {
++        const item = items[index];
++        if (!item) return;
++        readerOpen = true;
++        const request = ++articleRequest;
++        readerSite.textContent = 'r/science';
++        readerTitle.textContent = item.title;
++        while (readerBody.firstChild) readerBody.removeChild(readerBody.firstChild);
++        readerBody.appendChild(el('p', 'tt-audio-reader-note', L.loading));
++        readerBody.scrollTop = 0;
++        reader.style.display = '';
++        fetch(`${ARTICLE_URL}?i=${index}`, { cache: 'no-store' })
++            .then((r) => r.json())
++            .then((a) => {
++                if (request !== articleRequest) return;
++                while (readerBody.firstChild) readerBody.removeChild(readerBody.firstChild);
++                readerSite.textContent = a.site || 'r/science';
++                if (!a.full) readerBody.appendChild(el('p', 'tt-audio-reader-note', L.unavailable));
++                for (const text of a.paragraphs || []) readerBody.appendChild(el('p', '', text));
++            })
++            .catch(() => {
++                if (request !== articleRequest) return;
++                while (readerBody.firstChild) readerBody.removeChild(readerBody.firstChild);
++                readerBody.appendChild(el('p', 'tt-audio-reader-note', L.unavailable));
++                readerBody.appendChild(el('p', '', item.title));
++            });
++    }
++
++    function closeReader() {
++        readerOpen = false;
++        articleRequest++;
++        reader.style.display = 'none';
++    }
++
++    return {
++        element: card,
++        reader,
++        start() {
++            if (!items.length || Date.now() - loadedAt > RELOAD_MS) load();
++            else render();
++            clearInterval(pageTimer);
++            pageTimer = setInterval(nextPage, PAGE_MS);
++        },
++        stop() {
++            clearInterval(pageTimer);
++            pageTimer = null;
++            selected = -1;
++            closeReader();
++        },
++        isAvailable: () => items.length > 0,
++        hasFocus: () => selected >= 0,
++        isReading: () => readerOpen,
++        focus() {
++            if (!items.length) return;
++            selected = 0;
++            render();
++        },
++        blur() {
++            selected = -1;
++            render();
++        },
++        // Up / Down in the headlines; going past the last one leaves the list.
++        move(direction) {
++            const onPage = Math.min(PER_PAGE, items.length - page * PER_PAGE);
++            const next = selected + direction;
++            if (next < 0) {
++                // Above the first: previous page, last headline.
++                page = (page - 1 + pages()) % pages();
++                selected = Math.min(PER_PAGE, items.length - page * PER_PAGE) - 1;
++            } else if (next >= onPage) {
++                page = (page + 1) % pages();
++                selected = 0;
++            } else {
++                selected = next;
++            }
++            render();
++        },
++        openSelected() {
++            if (selected >= 0) open(page * PER_PAGE + selected);
++        },
++        // Reading panel: scroll by about a third of its height.
++        scroll(direction) {
++            readerBody.scrollTop += direction * readerBody.clientHeight * 0.35;
++        },
++        closeReader,
++    };
++}
 diff --git a/mods/features/audioOnly.css b/mods/features/audioOnly.css
 new file mode 100644
-index 0000000..562378f
+index 0000000..7dcdf42
 --- /dev/null
 +++ b/mods/features/audioOnly.css
-@@ -0,0 +1,1368 @@
+@@ -0,0 +1,1676 @@
 +/* Audio-only "Now Playing" screen, styled after Apple Music on Apple TV. */
 +
 +.tt-audio {
@@ -2043,12 +2234,320 @@ index 0000000..562378f
 +.tt-audio-title-row {
 +    margin-top: 3.2vh;
 +}
++
++/* ------------------------------------------------------------------------
++   No spectrum: the right column shows the artwork large (like Apple Music),
++   the title and artist centred under it, then the progress bar, controls and
++   Hue tile at the bottom.
++   ------------------------------------------------------------------------ */
++.tt-audio-title-row {
++    flex-direction: column;
++    align-items: center;
++    margin-top: 0;
++    text-align: center;
++}
++
++.tt-audio-art {
++    width: 50vh;
++    height: 50vh;
++    margin: 0 0 3vh;
++    border-radius: 2.4vh;
++    box-shadow: 0 2.4vh 6vh rgba(0, 0, 0, 0.55), inset 0 0 0 0.12vh rgba(255, 255, 255, 0.12);
++}
++
++.tt-audio-title-text {
++    width: 100%;
++}
++
++.tt-audio-title {
++    font-size: 5.6vh;
++    -webkit-line-clamp: 1;
++}
++
++.tt-audio-author {
++    font-size: 3.6vh;
++}
++
++.tt-audio-progress {
++    margin-top: auto;
++}
++
++/* Everything a size smaller, with a safe margin all round: TVs crop the edges
++   of the picture (overscan). The "scale" property composes with the burn-in
++   guard's pixel-shift transform instead of replacing it. */
++.tt-audio-content {
++    scale: 0.86;
++}
++
++/* ------------------------------------------------------------------------
++   Clock, date and forecast 30 % smaller, grouped in the middle of the left
++   column (instead of spread from the top of the screen to the bottom).
++   ------------------------------------------------------------------------ */
++.tt-audio-art-wrap {
++    justify-content: center;
++}
++
++.tt-audio-led,
++.tt-audio-weather {
++    width: 59vh;
++}
++
++.tt-audio-led.tt-flap {
++    margin-bottom: 4vh;
++}
++
++.tt-flap-card {
++    width: 8.7vh;
++    height: 15vh;
++    border-radius: 1.1vh;
++}
++
++.tt-flap-char {
++    font-size: 12.2vh;
++    line-height: 15vh;
++}
++
++.tt-flap-colon {
++    height: 15vh;
++    margin: 0 1vh;
++}
++
++.tt-flap-colon i {
++    width: 1.1vh;
++    height: 1.1vh;
++}
++
++.tt-flap-colon i + i {
++    margin-top: 2.5vh;
++}
++
++.tt-flap-label {
++    font-size: 1.5vh;
++}
++
++.tt-flap-row-date {
++    margin-top: 1.4vh;
++}
++
++.tt-flap-row-date .tt-flap-card {
++    width: 7.7vh;
++    height: 10.8vh;
++    border-radius: 1vh;
++}
++
++.tt-flap-row-date .tt-flap-char {
++    font-size: 8.8vh;
++    line-height: 10.8vh;
++}
++
++.tt-flap-row-date .tt-flap-label {
++    font-size: 1.35vh;
++}
++
++.tt-flap-row-date .tt-flap-group + .tt-flap-group {
++    margin-left: 2.1vh;
++}
++
++.tt-audio-weather {
++    gap: 1vh;
++}
++
++.tt-audio-weather-day {
++    padding: 1.8vh 0 2vh;
++    border-radius: 1.1vh;
++}
++
++.tt-audio-weather-label {
++    font-size: 2.4vh;
++}
++
++.tt-audio-weather-icon {
++    width: 10vh;
++    height: 10vh;
++    margin: 1.8vh 0;
++}
++
++.tt-audio-weather-temps {
++    font-size: 2.25vh;
++}
++
++.tt-audio-ambient .tt-audio-led.tt-flap {
++    width: 59vh;
++}
++
++/* Science news ticker under the forecast: same glass card as the tiles. */
++.tt-audio-news {
++    box-sizing: border-box;
++    width: 59vh;
++    margin-top: 3vh;
++    padding: 1.6vh 2vh 1.8vh;
++    border-radius: 1.1vh;
++    background: linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.06) 100%);
++    box-shadow: inset 0 0.14vh 0 rgba(255, 255, 255, 0.5), inset 0 0 0 0.12vh rgba(255, 255, 255, 0.18), 0 1vh 2.4vh rgba(0, 0, 0, 0.22);
++}
++
++.tt-audio-news-head {
++    display: flex;
++    justify-content: space-between;
++    align-items: center;
++    margin-bottom: 0.8vh;
++    font-size: 1.5vh;
++    font-weight: 700;
++    letter-spacing: 0.06em;
++    text-transform: uppercase;
++    color: rgba(255, 255, 255, 0.6);
++}
++
++.tt-audio-news-source {
++    color: #ff7a45;
++}
++
++.tt-audio-news-count {
++    font-variant-numeric: tabular-nums;
++}
++
++.tt-audio-news-title {
++    font-size: 2.2vh;
++    font-weight: 600;
++    line-height: 1.3;
++    height: calc(2.2vh * 1.3 * 2);
++    display: -webkit-box;
++    -webkit-line-clamp: 2;
++    -webkit-box-orient: vertical;
++    overflow: hidden;
++    transition: opacity 0.25s ease;
++}
++
++.tt-audio-news-fade {
++    opacity: 0;
++}
++
++.tt-audio-ambient .tt-audio-news {
++    display: none !important;
++}
++
++/* News: four headlines at a time, selectable with the remote. */
++.tt-audio-news {
++    padding: 1.6vh 1.8vh 1.2vh;
++}
++
++.tt-audio-news-list {
++    display: flex;
++    flex-direction: column;
++}
++
++.tt-audio-news-item {
++    display: flex;
++    align-items: flex-start;
++    padding: 0.8vh 1vh;
++    border-radius: 0.9vh;
++    cursor: pointer;
++}
++
++.tt-audio-news-item + .tt-audio-news-item {
++    margin-top: 0.3vh;
++}
++
++.tt-audio-news-dot {
++    flex: 0 0 auto;
++    width: 0.8vh;
++    height: 0.8vh;
++    margin: 0.85vh 1.2vh 0 0;
++    border-radius: 50%;
++    background: #ff7a45;
++}
++
++.tt-audio-news-item .tt-audio-news-title {
++    flex: 1 1 auto;
++    min-width: 0;
++    height: auto;
++    font-size: 1.85vh;
++    font-weight: 600;
++    line-height: 1.3;
++    display: -webkit-box;
++    -webkit-line-clamp: 2;
++    -webkit-box-orient: vertical;
++    overflow: hidden;
++}
++
++/* Selected with the remote: brighter glass and a white ring. */
++.tt-audio-news-selected {
++    background: linear-gradient(180deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.12) 100%);
++    box-shadow: 0 0 0 0.25vh #fff;
++}
++
++/* Reading panel: the article over a dimmed audio screen. */
++.tt-audio-reader {
++    position: absolute;
++    top: 0;
++    left: 0;
++    right: 0;
++    bottom: 0;
++    z-index: 5;
++    display: flex;
++    flex-direction: column;
++    align-items: center;
++    justify-content: center;
++    background: rgba(0, 0, 0, 0.62);
++}
++
++.tt-audio-reader-box {
++    display: flex;
++    flex-direction: column;
++    box-sizing: border-box;
++    width: 118vh;
++    max-width: 88vw;
++    height: 80vh;
++    padding: 4vh 5vh 3vh;
++    border-radius: 2.4vh;
++    background: linear-gradient(180deg, rgba(40, 42, 48, 0.94) 0%, rgba(22, 24, 28, 0.96) 100%);
++    box-shadow: inset 0 0.14vh 0 rgba(255, 255, 255, 0.35), inset 0 0 0 0.12vh rgba(255, 255, 255, 0.14), 0 3vh 8vh rgba(0, 0, 0, 0.6);
++}
++
++.tt-audio-reader-site {
++    font-size: 1.8vh;
++    font-weight: 700;
++    letter-spacing: 0.08em;
++    text-transform: uppercase;
++    color: #ff7a45;
++}
++
++.tt-audio-reader-title {
++    margin: 1.2vh 0 2.4vh;
++    font-size: 3.6vh;
++    font-weight: 700;
++    line-height: 1.25;
++}
++
++.tt-audio-reader-body {
++    flex: 1 1 auto;
++    overflow: hidden;
++    font-size: 2.5vh;
++    line-height: 1.55;
++    color: rgba(255, 255, 255, 0.88);
++}
++
++.tt-audio-reader-body p {
++    margin: 0 0 1.6vh;
++}
++
++.tt-audio-reader-note {
++    font-style: italic;
++    color: rgba(255, 255, 255, 0.55);
++}
++
++.tt-audio-reader-hint {
++    margin-top: 1.6vh;
++    font-size: 1.8vh;
++    font-weight: 600;
++    color: rgba(255, 255, 255, 0.55);
++}
 diff --git a/mods/features/audioOnly.js b/mods/features/audioOnly.js
 new file mode 100644
-index 0000000..11a78cc
+index 0000000..8eff8ff
 --- /dev/null
 +++ b/mods/features/audioOnly.js
-@@ -0,0 +1,671 @@
+@@ -0,0 +1,700 @@
 +// Audio-only mode for TizenTube
 +// Hides the video behind a "now playing" screen. Remote: OK = play/pause,
 +// Left/Right = seek 10s, Back = leave audio mode, Down = Hue tile.
@@ -2057,10 +2556,11 @@ index 0000000..11a78cc
 +import { t } from 'i18next';
 +import css from './audioOnly.css';
 +import { createWeather, weatherIcon, kindFor } from './audioWeather.js';
-+import { createSpectrum } from './audioSpectrum.js';
++import { colorFromImage } from './audioSpectrum.js';
 +import { createFlapClock } from './audioFlapClock.js';
 +import { createBurnInGuard } from './audioBurnIn.js';
 +import { createHueTile } from './audioHueTile.js';
++import { createNews } from './audioNews.js';
 +import { cleanTitle } from './audioTitle.js';
 +import { mainVideo, mainPlayer } from './audioMainVideo.js';
 +
@@ -2187,6 +2687,9 @@ index 0000000..11a78cc
 +    artWrap.appendChild(els.clock.element);
 +    els.weather = createWeather(t('player.audioOnly.today'));
 +    artWrap.appendChild(els.weather.element);
++    // Science news ticker (Reddit r/science) under the forecast.
++    els.news = createNews({ loading: t('player.audioOnly.newsLoading'), unavailable: t('player.audioOnly.newsUnavailable') });
++    artWrap.appendChild(els.news.element);
 +    content.appendChild(artWrap);
 +
 +    // Small artwork, next to the title.
@@ -2204,10 +2707,7 @@ index 0000000..11a78cc
 +    titleRow.appendChild(titleText);
 +    info.appendChild(titleRow);
 +
-+    // Sound animation: Winamp-style LED spectrum analyser.
-+    // Spectrum shape: particle sphere ('orb'); 'bars' and 'circle' also exist.
-+    els.spectrum = createSpectrum({ shape: window.ttSpectrumShape || 'orb' });
-+    info.appendChild(els.spectrum.element);
++    // No spectrum any more: the artwork is shown large instead.
 +
 +    const progress = el('div', 'tt-audio-progress');
 +    // Track, then what is already downloaded, the played part (artwork colour)
@@ -2269,6 +2769,9 @@ index 0000000..11a78cc
 +    // the footer stays, empty, for the burn-in guard's pixel shift.
 +    const footer = el('div', 'tt-audio-footer');
 +    overlay.appendChild(footer);
++
++    // Reading panel for a news article, above everything on the audio screen.
++    overlay.appendChild(els.news.reader);
 +
 +    els.burnIn = createBurnInGuard(overlay, content, footer);
 +
@@ -2367,7 +2870,7 @@ index 0000000..11a78cc
 +    if (videoId && VIDEO_ID_RE.test(videoId)) {
 +        setArtwork(videoId);
 +        // Small thumbnail: enough to find the colour, quick to load.
-+        els.spectrum.setColorFromImage(`https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, (rgb) => {
++        colorFromImage(`https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`, (rgb) => {
 +            els.clock.setColor(rgb);
 +            setAccent(rgb);
 +        });
@@ -2421,7 +2924,6 @@ index 0000000..11a78cc
 +        setPlayIcon(video.paused);
 +    }
 +    overlay.classList.toggle('tt-audio-paused', video.paused);
-+    els.spectrum.setPaused(video.paused);
 +}
 +
 +function tick() {
@@ -2599,6 +3101,31 @@ index 0000000..11a78cc
 +        return false;
 +    }
 +
++    // News article open: Up / Down scroll it, OK or Back close it.
++    if (els.news.isReading()) {
++        if (evt.type === 'keydown') {
++            if (evt.keyCode === 38) els.news.scroll(-1);
++            else if (evt.keyCode === 40) els.news.scroll(1);
++            else if (evt.keyCode === 13 || evt.keyCode === 32 || BACK_KEYS.indexOf(evt.keyCode) !== -1) els.news.closeReader();
++        }
++        evt.preventDefault();
++        evt.stopPropagation();
++        return false;
++    }
++
++    // Headlines selected: Up / Down move, OK opens, Back (or Left / Right) leaves.
++    if (els.news.hasFocus()) {
++        if (evt.type === 'keydown') {
++            if (evt.keyCode === 38) els.news.move(-1);
++            else if (evt.keyCode === 40) els.news.move(1);
++            else if (evt.keyCode === 13 || evt.keyCode === 32) els.news.openSelected();
++            else if (BACK_KEYS.indexOf(evt.keyCode) !== -1 || evt.keyCode === 37 || evt.keyCode === 39) els.news.blur();
++        }
++        evt.preventDefault();
++        evt.stopPropagation();
++        return false;
++    }
++
 +    // Hue tile selected: OK switches the strip, Left/Right set the brightness,
 +    // Down goes to the "Rythme" button (OK there turns the beat pulsing on/off).
 +    if (els.hue.isFocused()) {
@@ -2639,7 +3166,8 @@ index 0000000..11a78cc
 +    } else if (evt.keyCode === 40) {
 +        if (evt.type === 'keydown') els.hue.setFocused(true);
 +    } else if (evt.keyCode === 38) {
-+        // Swallow so the hidden YouTube UI underneath doesn't move.
++        // Up: select the news headlines.
++        if (evt.type === 'keydown') els.news.focus();
 +    } else {
 +        // Media keys (play/pause, next, previous...) go to YouTube as usual.
 +        handled = false;
@@ -2683,8 +3211,8 @@ index 0000000..11a78cc
 +    els.hue.setFocused(false);
 +    els.hue.refresh();
 +    els.burnIn.reset();
-+    els.spectrum.start();
 +    tickInterval = setInterval(tick, 500);
++    els.news.start();
 +}
 +
 +function disableAudioOnly(reason) {
@@ -2693,8 +3221,8 @@ index 0000000..11a78cc
 +    window.isAudioOnly = false;
 +    clearInterval(tickInterval);
 +    tickInterval = null;
++    els.news.stop();
 +    overlay.style.display = 'none';
-+    els.spectrum.stop();
 +}
 +
 +function toggleAudioOnly() {
@@ -3351,10 +3879,10 @@ index 0000000..3a983a6
 +}
 diff --git a/mods/features/audioWeather.js b/mods/features/audioWeather.js
 new file mode 100644
-index 0000000..e6384e6
+index 0000000..045745b
 --- /dev/null
 +++ b/mods/features/audioWeather.js
-@@ -0,0 +1,303 @@
+@@ -0,0 +1,310 @@
 +// 5-day weather row for the audio-only screen.
 +// YouTube TV's CSP only lets the page reach Google/YouTube hosts, so the
 +// forecast is relayed through a public Google Sheet: its A1 cell runs
@@ -3376,6 +3904,9 @@ index 0000000..e6384e6
 +const STALE_MAX_MS = 4 * 24 * 60 * 60 * 1000;
 +const REQUEST_TIMEOUT_MS = 8000;
 +const DAYS = 5;
++// Days kept from each forecast: a few more than shown, so that after midnight
++// (or with an older saved forecast) there are still 5 days from today.
++const KEEP_DAYS = 7;
 +const SVG_NS = 'http://www.w3.org/2000/svg';
 +
 +const COLORS = {
@@ -3517,10 +4048,12 @@ index 0000000..e6384e6
 +}
 +
 +// Old forecasts start in the past: drop the days before today.
-+function fromToday(data) {
++// minDays: fewer days than that from today count as no forecast.
++function fromToday(data, minDays = DAYS) {
 +    const today = localIsoDate(new Date());
 +    const days = data.days.filter((day) => day.date >= today);
-+    return days.length ? Object.assign({}, data, { days }) : null;
++    // Not enough days left from today: treat as missing so it is fetched again.
++    return days.length >= minDays ? Object.assign({}, data, { days }) : null;
 +}
 +
 +function writeCache(data) {
@@ -3554,7 +4087,8 @@ index 0000000..e6384e6
 +        return await fetchForecast();
 +    } catch (e) {
 +        const stale = readCache(STALE_MAX_MS);
-+        const usable = stale && fromToday(stale);
++        // Offline: an old forecast with fewer days is better than none.
++        const usable = stale && fromToday(stale, 1);
 +        if (usable) return usable;
 +        throw e;
 +    }
@@ -3568,7 +4102,7 @@ index 0000000..e6384e6
 +    if (!days.length) throw new Error('no native forecast');
 +    // Cities for the Swiss map (MeteoSwiss), when the native side has them.
 +    const cities = Array.isArray(json.cities) ? json.cities : [];
-+    const data = { savedAt: Date.now(), city: '', days: days.slice(0, DAYS), cities };
++    const data = { savedAt: Date.now(), city: '', days: days.slice(0, KEEP_DAYS), cities };
 +    writeCache(data);
 +    return data;
 +}
@@ -3602,7 +4136,7 @@ index 0000000..e6384e6
 +    }
 +    if (!days.length) throw new Error('no forecast');
 +
-+    const data = { savedAt: Date.now(), city, days: days.slice(0, DAYS) };
++    const data = { savedAt: Date.now(), city, days: days.slice(0, KEEP_DAYS) };
 +    writeCache(data);
 +    return data;
 +}
@@ -3621,7 +4155,8 @@ index 0000000..e6384e6
 +
 +function render(container, data, todayLabel) {
 +    while (container.firstChild) container.removeChild(container.firstChild);
-+    data.days.forEach((day, i) => {
++    // Always the first 5 days from today.
++    data.days.slice(0, DAYS).forEach((day, i) => {
 +        const item = el('div', 'tt-audio-weather-day');
 +        item.appendChild(el('div', 'tt-audio-weather-label', dayLabel(day.date, i, todayLabel)));
 +        item.appendChild(weatherIcon(kindFor(day.code)));
@@ -3726,10 +4261,10 @@ index 3d2d10d..d9b7216 100644
              window.h5vcc.tizentube.EnterPIP();
              break;
 diff --git a/mods/translations/resources/en.json b/mods/translations/resources/en.json
-index 741901a..0722cd6 100644
+index 741901a..e9fa274 100644
 --- a/mods/translations/resources/en.json
 +++ b/mods/translations/resources/en.json
-@@ -294,6 +294,28 @@
+@@ -294,6 +294,30 @@
              "button": "Share",
              "qrCodeScanMessage": "Scan the QR code below to share this video."
          },
@@ -3750,6 +4285,8 @@ index 741901a..0722cd6 100644
 +            "hueOff": "Off",
 +            "hueUnreachable": "Unreachable",
 +            "hueRhythm": "Beat",
++            "newsLoading": "Loading the article…",
++            "newsUnavailable": "Full article unavailable: Reddit summary.",
 +            "hueName": "Hue strip",
 +            "today": "Today",
 +            "live": "Live",
@@ -3759,10 +4296,10 @@ index 741901a..0722cd6 100644
          "chapters": {
              "title": "Chapters",
 diff --git a/mods/translations/resources/fr.json b/mods/translations/resources/fr.json
-index dc83f29..902884d 100644
+index dc83f29..bd200c8 100644
 --- a/mods/translations/resources/fr.json
 +++ b/mods/translations/resources/fr.json
-@@ -294,6 +294,28 @@
+@@ -294,6 +294,30 @@
              "button": "Partager",
              "qrCodeScanMessage": "Scannez le code QR ci-dessous pour partager cette vidéo."
          },
@@ -3783,6 +4320,8 @@ index dc83f29..902884d 100644
 +            "hueOff": "Éteinte",
 +            "hueUnreachable": "Injoignable",
 +            "hueRhythm": "Rythme",
++            "newsLoading": "Chargement de l’article…",
++            "newsUnavailable": "Article complet indisponible : résumé Reddit.",
 +            "hueName": "Bande Hue",
 +            "today": "Auj.",
 +            "live": "En direct",
